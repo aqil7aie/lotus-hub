@@ -57,4 +57,5 @@ gradle :app:assembleRelease
 - كود نظيف (clean-room): المعمارية مستوحاة من الوصف العام لمشروع Tavernium؛
   لم يُنسخ أي كود منه.
 - الحزمة: `com.aqil.lotusshell`.
-- الترخيص: يحدد لاحقاً.
+- الترخيص: GPL-3.0 — انظر LICENSE.
+- حقوق النشر © 2026 عقيل هاني.

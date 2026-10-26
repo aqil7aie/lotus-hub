@@ -60,4 +60,5 @@ If you find any error while using the app, leave the error here
 - Clean-room code: the architecture is informed by Tavernium's own public
   description; no Tavernium code is copied here.
 - Package: `com.aqil.lotusshell`.
-- License: to be decided.
+- License: GPL-3.0 — see LICENSE.
+- Copyright © 2026 Aqil Hani.

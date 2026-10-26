@@ -58,4 +58,5 @@ gradle :app:assembleRelease
 - 洁净室代码（clean-room）：架构参考了 Tavernium 的公开描述；
   没有复制 Tavernium 的任何代码。
 - 包名：`com.aqil.lotusshell`。
-- 许可证：待定。
+- 许可证：GPL-3.0 —— 见 LICENSE。
+- 版权所有 © 2026 Aqil Hani。
