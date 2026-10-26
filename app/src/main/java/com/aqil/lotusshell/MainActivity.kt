@@ -444,11 +444,11 @@ class MainActivity : Activity() {
                 if (success) {
                     hideAddressRow()
                     statusView.visibility = View.GONE
-                    // v0.4.9: native backup of the viewport-cover
-                    // script — the same patch, injected from the app
-                    // on every successful load, so the fix no longer
-                    // depends on extension-update semantics.
-                    session.evaluateJavascript(VIEWPORT_COVER_JS)
+                    // v0.4.9: no native JS injection here — GeckoSession
+                    // exposes no evaluateJavascript (verified against
+                    // the 158 AAR: loadUri only). The viewport-cover
+                    // fix rides on the fresh extension id's
+                    // document_start content script instead.
                 } else {
                     showAddressRow()
                     if (statusView.visibility == View.GONE) {
@@ -516,11 +516,5 @@ class MainActivity : Activity() {
     companion object {
         private const val PREFS = "lotus-shell-prefs"
         private const val KEY_URL = "server_url"
-        // Same patch as assets/select-bridge/viewport-cover.js, kept
-        // as a native backup: if the page's viewport meta lacks
-        // viewport-fit, add cover so the page paints into the cutout.
-        private const val VIEWPORT_COVER_JS = """
-            (function(){try{var m=document.querySelector('meta[name="viewport"]');if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');m.setAttribute('content','width=device-width, initial-scale=1, viewport-fit=cover');(document.head||document.documentElement).appendChild(m);return;}var c=m.getAttribute('content')||'';if(!/viewport-fit\s*=/.test(c)){m.setAttribute('content',(c?c.replace(/,\s*$/,'')+', ':'')+'viewport-fit=cover');}}catch(e){}})();
-        """
     }
 }
