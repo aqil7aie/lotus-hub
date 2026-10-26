@@ -83,6 +83,10 @@ class MainActivity : Activity() {
                     statusView.visibility = View.GONE
                 } else {
                     showAddressRow()
+                    if (statusView.visibility == View.GONE) {
+                        statusView.text = "تعذر تحميل الصفحة — تأكد أن السيرفر شغال والعنوان صحيح."
+                        statusView.visibility = View.VISIBLE
+                    }
                 }
             }
         }
