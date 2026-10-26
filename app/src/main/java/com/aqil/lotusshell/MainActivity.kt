@@ -23,9 +23,8 @@ import org.mozilla.geckoview.WebRequestError
  * SillyTavern / Neconyan address and remembers it.
  *
  * Deliberately small: no third-party dependencies besides GeckoView itself.
- * v0.2: address row hides on load (full-page view, the way Tavernium
- * behaves); back with no page history brings it back; load errors show
- * an Arabic message instead of silent white.
+ * v0.4: no auto-load on launch (saved address prefilled only); the row
+ * hides only on successful load (onPageStop success), not on load start.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -78,16 +77,22 @@ class MainActivity : Activity() {
         }
 
         session.progressDelegate = object : ProgressDelegate {
-            override fun onPageStart(session: GeckoSession, url: String) {
-                hideAddressRow()
-                statusView.visibility = View.GONE
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                if (success) {
+                    hideAddressRow()
+                    statusView.visibility = View.GONE
+                } else {
+                    showAddressRow()
+                }
             }
         }
 
+        // Saved address is prefilled only — never auto-loaded. The address
+        // row must stay visible until the user enters an address and it
+        // loads successfully (hide only on enter + working server).
         val saved = prefs.getString(KEY_URL, null)
         if (!saved.isNullOrBlank()) {
             urlInput.setText(saved)
-            session.loadUri(normalize(saved))
         }
 
         goButton.setOnClickListener { loadFromInput(prefs) }
