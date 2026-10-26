@@ -38,25 +38,6 @@
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- v0.5.2 coach hint: small writing above the first server
-             card (grid mode only). It teaches both gestures —
-             long-press for options, single tap to enter — and its
-             dismissal conditions are HIDDEN: no counters, no
-             explanation. It vanishes forever only after one
-             long-press AND one enter; only wiping app data
-             brings it back (fresh prefs). -->
-        <TextView
-            android:id="@+id/hubHint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:paddingTop="8dp"
-            android:paddingBottom="4dp"
-            android:text="Long-press a card for options • Tap once to enter"
-            android:textColor="#AAAAAA"
-            android:textSize="13sp"
-            android:visibility="gone" />
-
         <ScrollView
             android:id="@+id/hubGridScroll"
             android:layout_width="match_parent"

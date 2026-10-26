@@ -140,8 +140,11 @@ import org.json.JSONObject
  * v0.5.2 (the complete version, Aqil's order 2026-10-26
  * 17:58: a clean number, no B/C suffix — the hint is a
  * NEW feature, so it takes a new minor): the parked
- * coach hint above the first server card. Small English
- * writing: long-press for options, single tap to enter.
+ * coach hint directly above the first card row, INSIDE
+ * the grid list (not a section header over the grid).
+ * Small English writing with a down arrow after it,
+ * pointing at the cards: long-press for options,
+ * single tap to enter.
  * Its dismissal conditions are HIDDEN (no counters, no
  * explanation — not a session popup like HTML games):
  * one long-press fulfills the first condition, one
@@ -174,7 +177,7 @@ class MainActivity : Activity() {
     private lateinit var geckoView: GeckoView
     private lateinit var session: GeckoSession
     private lateinit var hubView: LinearLayout
-    private lateinit var hubHint: TextView
+    private var hubHintView: TextView? = null
     private lateinit var hubGridScroll: ScrollView
     private lateinit var hubGridList: LinearLayout
     private lateinit var hubFormScroll: ScrollView
@@ -401,7 +404,6 @@ class MainActivity : Activity() {
 
         geckoView = findViewById(R.id.geckoview)
         hubView = findViewById(R.id.hubView)
-        hubHint = findViewById(R.id.hubHint)
         hubGridScroll = findViewById(R.id.hubGridScroll)
         hubGridList = findViewById(R.id.hubGridList)
         hubFormScroll = findViewById(R.id.hubFormScroll)
@@ -760,22 +762,11 @@ class MainActivity : Activity() {
             prefs.getBoolean(KEY_HINT_ENTER, false)
     }
 
-    private fun refreshHint() {
-        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        hubHint.visibility =
-            if (!formShown && servers.isNotEmpty() && !hintDone(prefs)) {
-                View.VISIBLE
-            } else {
-                View.GONE
-            }
-    }
-
     private fun showHub(showForm: Boolean) {
         formShown = showForm
         inServerView = false
         geckoView.visibility = View.GONE
         hubView.visibility = View.VISIBLE
-        refreshHint()
         if (showForm) {
             // New-server form only: an edit fills the fields
             // right after this via showFormForEdit.
@@ -797,6 +788,26 @@ class MainActivity : Activity() {
 
     private fun refreshHub() {
         hubGridList.removeAllViews()
+        // v0.5.2 (corrected placement): the hint is the FIRST
+        // child of the grid list itself — directly above the
+        // first card row, not a header over the grid. A small
+        // line with a down arrow after the text, pointing at
+        // the cards it teaches. Grid mode only by
+        // construction: the form and the server view hide
+        // the whole grid, hint with it.
+        hubHintView = null
+        val hintPrefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (servers.isNotEmpty() && !hintDone(hintPrefs)) {
+            val hint = TextView(this).apply {
+                text = "Long-press a card for options • Tap once to enter ↓"
+                textSize = 13f
+                setTextColor(android.graphics.Color.parseColor("#AAAAAA"))
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, 8, 0, 4)
+            }
+            hubGridList.addView(hint)
+            hubHintView = hint
+        }
         var row: LinearLayout? = null
         for ((index, server) in servers.withIndex()) {
             if (index % 2 == 0) {
@@ -867,7 +878,12 @@ class MainActivity : Activity() {
                 // ends in Cancel. Re-evaluate the hint at once:
                 // if entering already happened, it vanishes now.
                 prefs.edit().putBoolean(KEY_HINT_LONG, true).apply()
-                refreshHint()
+                // v0.5.2: if entering already happened, the
+                // second condition is met too — hide the hint
+                // at once, no grid rebuild needed.
+                if (hintDone(prefs)) {
+                    hubHintView?.visibility = View.GONE
+                }
                 AlertDialog.Builder(this)
                     .setTitle(displayName(server))
                     .setItems(arrayOf("Edit", "Delete")) { _, which ->
@@ -918,7 +934,6 @@ class MainActivity : Activity() {
                 )
             )
         }
-        refreshHint()
     }
 
     private fun openServer(server: HubServer) {
