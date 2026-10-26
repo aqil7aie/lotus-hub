@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId "com.aqil.lotusshell"
-        minSdk 24
+        minSdk 26 // GeckoView 158 requires at least 26 (Android 8.0)
         targetSdk 35
         versionCode 1
         versionName "0.1.0"
@@ -30,6 +30,12 @@ android {
 }
 
 dependencies {
+    // GeckoView's tree pulls kotlin-stdlib 2.4.20, but AGP 9.1's bundled
+    // Kotlin compiler is 2.2.0 and cannot read metadata 2.4.0 — pin the
+    // stdlib to the compiler's own version.
+    constraints {
+        implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.10")
+    }
     // Latest stable GeckoView, verified from Mozilla's maven metadata
     // (last updated 2026-10-21). Single artifact, no per-arch flavors.
     // Kotlin stdlib comes from AGP 9's built-in Kotlin support — no
