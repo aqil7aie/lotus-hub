@@ -13,6 +13,7 @@ import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
+import org.mozilla.geckoview.GeckoSession.ProgressDelegate
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebRequestError
@@ -60,11 +61,6 @@ class MainActivity : Activity() {
         geckoView.setSession(session)
 
         session.navigationDelegate = object : NavigationDelegate {
-            override fun onPageStart(session: GeckoSession, url: String) {
-                hideAddressRow()
-                statusView.visibility = View.GONE
-            }
-
             override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
                 sessionCanGoBack = canGoBack
             }
@@ -78,6 +74,13 @@ class MainActivity : Activity() {
                 statusView.visibility = View.VISIBLE
                 showAddressRow()
                 return null
+            }
+        }
+
+        session.progressDelegate = object : ProgressDelegate {
+            override fun onPageStart(session: GeckoSession, url: String) {
+                hideAddressRow()
+                statusView.visibility = View.GONE
             }
         }
 
