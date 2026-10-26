@@ -1,0 +1,85 @@
+package com.aqil.lotusshell
+
+import android.app.Activity
+import android.content.Context
+import android.os.Bundle
+import android.view.inputmethod.EditorInfo
+import android.widget.Button
+import android.widget.EditText
+import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.GeckoView
+
+/**
+ * Lotus Shell v0 skeleton: a GeckoView shell that loads one self-hosted
+ * SillyTavern / Neconyan address and remembers it.
+ *
+ * Deliberately small: no third-party dependencies besides GeckoView itself.
+ * TODO (next phases, in order):
+ *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
+ *  2. Back navigation (session.goBack) + full Arabic strings in strings.xml.
+ *  3. Keep-alive: foreground service + content-script visibility handling.
+ *  4. Reply notifications: listen for the ST MESSAGE_RECEIVED event.
+ *  5. Downloads routed to the Downloads folder.
+ *  6. Burn-in guard overlay for long waits.
+ *  7. In-app updates with signature + SHA-256 checks (Tavernium-style).
+ */
+class MainActivity : Activity() {
+    private lateinit var geckoView: GeckoView
+    private lateinit var session: GeckoSession
+    private lateinit var urlInput: EditText
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        geckoView = findViewById(R.id.geckoview)
+        urlInput = findViewById(R.id.serverUrl)
+        val goButton: Button = findViewById(R.id.goButton)
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+        val runtime = GeckoRuntime.create(this)
+        val settings = GeckoSessionSettings.Builder().allowJavascript(true).build()
+        session = GeckoSession(settings)
+        session.open(runtime)
+        geckoView.setSession(session)
+
+        val saved = prefs.getString(KEY_URL, null)
+        if (!saved.isNullOrBlank()) {
+            urlInput.setText(saved)
+            session.loadUri(normalize(saved))
+        }
+
+        goButton.setOnClickListener { loadFromInput(prefs) }
+        urlInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_GO) {
+                loadFromInput(prefs)
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    private fun loadFromInput(prefs: android.content.SharedPreferences) {
+        val raw = urlInput.text.toString().trim()
+        if (raw.isBlank()) return
+        val url = normalize(raw)
+        prefs.edit().putString(KEY_URL, url).apply()
+        session.loadUri(url)
+    }
+
+    private fun normalize(raw: String): String {
+        var url = raw
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "http://$url"
+        }
+        return url
+    }
+
+    companion object {
+        private const val PREFS = "lotus-shell-prefs"
+        private const val KEY_URL = "server_url"
+    }
+}
