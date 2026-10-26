@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace "com.aqil.lotusshell"
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.aqil.lotusshell"
