@@ -113,11 +113,23 @@
                     android:textColor="#FFFFFF"
                     android:textColorHint="#888888" />
 
-                <Button
-                    android:id="@+id/connectButton"
+                <!-- v0.5.1B: the message sits ABOVE the buttons, not
+                     below the fold — a Test result must be seen
+                     without scrolling. -->
+                <TextView
+                    android:id="@+id/formMessage"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Connect" />
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp" />
+
+                <Button
+                    android:id="@+id/saveButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Save" />
 
                 <Button
                     android:id="@+id/testButton"
@@ -137,14 +149,6 @@
                     android:layout_height="wrap_content"
                     android:text="Back"
                     android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/formMessage"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingTop="12dp"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp" />
             </LinearLayout>
         </ScrollView>
     </LinearLayout>

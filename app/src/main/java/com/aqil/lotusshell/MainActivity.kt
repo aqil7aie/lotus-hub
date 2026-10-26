@@ -119,10 +119,18 @@ import org.json.JSONObject
  * the view so Gecko resizes its viewport and the composer
  * rises. Strip and composer must now both pass together, or
  * the pair is still open.
+ * v0.5.1B (Hub fixes, from Aqil's 0.5.1 verdict): long-press
+ * offers Edit + Delete (edit replaces in place); legacy
+ * migration runs ONCE so a deleted card never resurrects;
+ * the form is always clean (no stale typing, no "saved by
+ * itself"); the save button is labeled Save; Test reports
+ * the HTTP status + a toast and its message sits above the
+ * buttons; a nameless card shows its URL once, with a globe
+ * icon; deleting the last card returns to the form.
  * v0.5.1 (Hub, Aqil's pick): black home grid of saved-server
  * cards (name-labeled, one tap opens, long-press deletes) +
  * add-server form (name, server, optional user/password;
- * Connect saves even if offline and never navigates, Test
+ * Save saves even if offline and never navigates, Test
  * probes reachability only, Enter opens without saving; form
  * has Back to the grid; + top-right reopens the form) +
  * file upload via PromptDelegate.onFilePrompt (system chooser).
@@ -149,7 +157,7 @@ class MainActivity : Activity() {
     private lateinit var serverInput: EditText
     private lateinit var userInput: EditText
     private lateinit var passInput: EditText
-    private lateinit var connectButton: Button
+    private lateinit var saveButton: Button
     private lateinit var testButton: Button
     private lateinit var enterButton: Button
     private lateinit var backButton: Button
@@ -158,6 +166,10 @@ class MainActivity : Activity() {
     private var sessionCanGoBack = false
     private var inServerView = false
     private var formShown = false
+    // v0.5.1B: index of the card being edited, or -1 for a new
+    // server. Saving with a valid index replaces that card in
+    // place (even if its URL changed); otherwise it upserts by URL.
+    private var editingIndex = -1
 
     // v0.5.1 Hub: saved servers, one per card. Stored as a JSON
     // array in prefs (KEY_SERVERS); user/pass are optional and live
@@ -371,7 +383,7 @@ class MainActivity : Activity() {
         serverInput = findViewById(R.id.serverInput)
         userInput = findViewById(R.id.userInput)
         passInput = findViewById(R.id.passInput)
-        connectButton = findViewById(R.id.connectButton)
+        saveButton = findViewById(R.id.saveButton)
         testButton = findViewById(R.id.testButton)
         enterButton = findViewById(R.id.enterButton)
         backButton = findViewById(R.id.backButton)
@@ -604,8 +616,13 @@ class MainActivity : Activity() {
         // v0.5.1 Hub wiring. Empty home = the add form itself; once
         // a server is saved the home is the card grid with + top-right.
         addButton.setOnClickListener { showHub(showForm = true) }
-        backButton.setOnClickListener { showHub(showForm = false) }
-        connectButton.setOnClickListener { saveFromForm(prefs) }
+        backButton.setOnClickListener {
+            // Back discards the draft: returning to the form
+            // later must show clean fields, never stale typing.
+            clearForm()
+            showHub(showForm = false)
+        }
+        saveButton.setOnClickListener { saveFromForm(prefs) }
         testButton.setOnClickListener { testFromForm() }
         enterButton.setOnClickListener { enterFromForm() }
         showHub(showForm = servers.isEmpty())
@@ -631,14 +648,21 @@ class MainActivity : Activity() {
                 )
             }
         }
-        // Legacy migration: the single pre-0.5.1 saved address
-        // becomes one card (empty name -> the address is its label).
-        if (servers.isEmpty()) {
-            val legacy = prefs.getString(KEY_URL, null)
-            if (!legacy.isNullOrBlank()) {
-                servers.add(HubServer("", legacy, "", ""))
-                persistServers(prefs)
+        // Legacy migration, RUN ONCE (v0.5.1B fix): the single
+        // pre-0.5.1 saved address becomes one card (empty name ->
+        // the address is its label). The old code re-ran this
+        // whenever the list was empty, so a deleted card rose
+        // from the dead on the next launch. The flag below
+        // closes that resurrection for good.
+        if (!prefs.getBoolean(KEY_MIGRATED, false)) {
+            if (servers.isEmpty()) {
+                val legacy = prefs.getString(KEY_URL, null)
+                if (!legacy.isNullOrBlank()) {
+                    servers.add(HubServer("", legacy, "", ""))
+                }
             }
+            prefs.edit().putBoolean(KEY_MIGRATED, true).apply()
+            persistServers(prefs)
         }
     }
 
@@ -666,8 +690,34 @@ class MainActivity : Activity() {
             "bunny" in hay -> "🐰"
             "tavern" in hay -> "💬"
             "opencode" in hay -> "</>"
-            else -> displayName(server).firstOrNull()?.uppercase() ?: "?"
+            // Nameless card (migrated legacy address): a globe,
+            // not the URL's first letter — "H" from "http://"
+            // meant nothing.
+            server.name.isBlank() -> "🌐"
+            else -> server.name.firstOrNull()?.uppercase() ?: "?"
         }
+    }
+
+    // v0.5.1B: a fresh form is always clean. Stale typing
+    // surviving a Back, a save, or a delete was the "it saved
+    // by itself" confusion: the fields kept the old values.
+    private fun clearForm() {
+        nameInput.setText("")
+        serverInput.setText("")
+        userInput.setText("")
+        passInput.setText("")
+        formMessage.text = ""
+        editingIndex = -1
+    }
+
+    private fun showFormForEdit(server: HubServer, index: Int) {
+        showHub(showForm = true)
+        nameInput.setText(server.name)
+        serverInput.setText(server.url)
+        userInput.setText(server.user)
+        passInput.setText(server.pass)
+        formMessage.text = ""
+        editingIndex = index
     }
 
     private fun showHub(showForm: Boolean) {
@@ -676,6 +726,9 @@ class MainActivity : Activity() {
         geckoView.visibility = View.GONE
         hubView.visibility = View.VISIBLE
         if (showForm) {
+            // New-server form only: an edit fills the fields
+            // right after this via showFormForEdit.
+            clearForm()
             hubGridScroll.visibility = View.GONE
             hubFormScroll.visibility = View.VISIBLE
             addButton.visibility = View.GONE
@@ -745,23 +798,48 @@ class MainActivity : Activity() {
             }
             card.addView(icon)
             card.addView(name)
-            card.addView(addr)
+            // v0.5.1B: a nameless card showed the URL twice
+            // (label line + address line, same text). One line
+            // only when there is no name.
+            if (server.name.isNotBlank()) {
+                card.addView(addr)
+            }
             card.setOnClickListener { openServer(server) }
-            // Long-press deletes: a wrong entry must never trap
-            // the user with no way to remove it.
+            // v0.5.1B: long-press offers Edit AND Delete — 0.5.1
+            // only deleted, so a typo meant delete + retype all.
             card.setOnLongClickListener {
+                val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 AlertDialog.Builder(this)
-                    .setTitle("Delete server?")
-                    .setMessage(displayName(server))
-                    .setPositiveButton("Delete") { dlg, _ ->
-                        servers.remove(server)
-                        persistServers(
-                            getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                        )
-                        refreshHub()
-                        dlg.dismiss()
+                    .setTitle(displayName(server))
+                    .setItems(arrayOf("Edit", "Delete")) { _, which ->
+                        if (which == 0) {
+                            showFormForEdit(server, servers.indexOf(server))
+                        } else {
+                            AlertDialog.Builder(this)
+                                .setTitle("Delete server?")
+                                .setMessage(displayName(server))
+                                .setPositiveButton("Delete") { dlg, _ ->
+                                    val removedUrl = server.url
+                                    servers.remove(server)
+                                    if (prefs.getString(KEY_URL, null) == removedUrl) {
+                                        prefs.edit().remove(KEY_URL).apply()
+                                    }
+                                    persistServers(prefs)
+                                    dlg.dismiss()
+                                    // Empty home IS the form, not
+                                    // a blank grid.
+                                    if (servers.isEmpty()) {
+                                        showHub(showForm = true)
+                                    } else {
+                                        refreshHub()
+                                    }
+                                }
+                                .setNegativeButton("Cancel") { dlg, _ ->
+                                    dlg.dismiss()
+                                }
+                                .show()
+                        }
                     }
-                    .setNegativeButton("Cancel") { dlg, _ -> dlg.dismiss() }
                     .show()
                 true
             }
@@ -817,26 +895,38 @@ class MainActivity : Activity() {
         )
     }
 
-    // Connect = SAVE. Deliberately NOT gated on reachability
-    // (Aqil's order): a failed connection must never cost the
-    // typed details — save first, test separately. Saving never
-    // navigates: it reports Saved and stays on the grid.
+    // Save (v0.5.1B: labeled Save, not Connect — the button's
+    // job IS saving, and calling it anything else hid it).
+    // Deliberately NOT gated on reachability (Aqil's order): a
+    // failed connection must never cost the typed details —
+    // save first, test separately. Saving never navigates:
+    // it reports Saved and stays on the grid.
     private fun saveFromForm(prefs: android.content.SharedPreferences) {
         if (serverInput.text.toString().isBlank()) {
             setFormMessage("Server address is required.", false)
             return
         }
         val server = readForm()
-        val existing = servers.indexOfFirst { it.url == server.url }
-        if (existing >= 0) servers[existing] = server else servers.add(server)
+        if (editingIndex in servers.indices) {
+            // Editing: replace in place, even if the URL changed.
+            servers[editingIndex] = server
+        } else {
+            val existing = servers.indexOfFirst { it.url == server.url }
+            if (existing >= 0) servers[existing] = server else servers.add(server)
+        }
         persistServers(prefs)
-        setFormMessage("Saved.", true)
+        clearForm()
+        Toast.makeText(this, "Saved.", Toast.LENGTH_SHORT).show()
         showHub(showForm = false)
     }
 
     // Test = reachability ONLY: no save, no open. Any HTTP
     // response (even 404/401) means the server is alive; only
-    // an exception/timeout means it is not.
+    // an exception/timeout means it is not. It is NOT a
+    // Termux/terminal command: it asks the server itself over
+    // HTTP and reports the answer — no shell runs anywhere.
+    // v0.5.1B: the result now carries the HTTP status and is
+    // also toasted, so it cannot hide below the fold again.
     private fun testFromForm() {
         if (serverInput.text.toString().isBlank()) {
             setFormMessage("Server address is required.", false)
@@ -845,7 +935,8 @@ class MainActivity : Activity() {
         val url = readForm().url
         setFormMessage("Testing…", true)
         Thread {
-            val ok = try {
+            var code: Int? = null
+            try {
                 val conn = java.net.URL(url).openConnection()
                     as java.net.HttpURLConnection
                 conn.connectTimeout = 5000
@@ -853,19 +944,24 @@ class MainActivity : Activity() {
                 conn.requestMethod = "GET"
                 conn.instanceFollowRedirects = false
                 conn.connect()
-                conn.responseCode in 100..599
+                code = conn.responseCode
             } catch (e: Exception) {
-                false
+                code = null
+            }
+            val resultText = if (code != null) {
+                "Connection successful — HTTP $code."
+            } else {
+                "Connection failed — no response."
             }
             runOnUiThread {
-                if (ok) setFormMessage("Connection successful.", true)
-                else setFormMessage("Connection failed.", false)
+                setFormMessage(resultText, code != null)
+                Toast.makeText(this, resultText, Toast.LENGTH_LONG).show()
             }
         }.start()
     }
 
     // Enter = OPEN ONLY: the filled-in server loads without
-    // being saved. Saving is Connect's job, not Enter's.
+    // being saved. Saving is Save's job, not Enter's.
     private fun enterFromForm() {
         if (serverInput.text.toString().isBlank()) {
             setFormMessage("Server address is required.", false)
@@ -928,6 +1024,7 @@ class MainActivity : Activity() {
         private const val PREFS = "lotus-shell-prefs"
         private const val KEY_URL = "server_url"
         private const val KEY_SERVERS = "hub_servers_v1"
+        private const val KEY_MIGRATED = "hub_migrated_v1"
         private const val REQ_FILE = 1001
     }
 }
