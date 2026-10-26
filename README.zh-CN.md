@@ -1,11 +1,14 @@
 # Lotus Hub
 
-[العربية](README.md) · [English](README.en.md) · [中文](README.zh-CN.md)
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" alt="Lotus Hub icon">
+
+[English](README.md) · [العربية](README.ar.md) · [中文](README.zh-CN.md)
 
 ## Lotus Hub 是什么？
 
-Lotus Hub 是一款原生 Android 应用，可以全屏打开你的本地服务器，
-就像独立应用一样：SillyTavern 及其分支，以及任何其他本地服务器。
+Lotus Hub 是一款原生 Android 应用，可作为 SillyTavern 的遥控器：
+它可以全屏打开你的本地服务器，就像独立应用一样：
+SillyTavern 及其分支，以及任何其他本地服务器。
 
 ## 它是如何工作的？
 

@@ -1,57 +1,63 @@
 # Lotus Hub
 
-[العربية](README.md) · [English](README.en.md) · [中文](README.zh-CN.md)
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" alt="Lotus Hub icon">
 
-## ما هو Lotus Hub؟
+[English](README.md) · [العربية](README.ar.md) · [中文](README.zh-CN.md)
 
-Lotus Hub تطبيق أندرويد أصلي يفتح سيرفراتك المحلية بملء الشاشة، كأنها تطبيقات مستقلة:
-سيلّي تافرن وفروعه، وأي سيرفر محلي آخر.
+## What is Lotus Hub?
 
-## كيف يعمل؟
+Lotus Hub is a native Android app that works as a remote for SillyTavern —
+it opens your local servers in full screen, as if they were standalone apps:
+SillyTavern and its forks, and any other local server.
 
-1. **أضف سيرفراً:** الاسم + العنوان + اسم مستخدم وكلمة مرور (اختياريان)، ثم **Save**.
-   الحفظ يعمل حتى لو كان السيرفر مطفأً، ولا يفتح السيرفر.
-2. **اضغط البطاقة مرة واحدة للدخول** إلى السيرفر.
-3. **اضغط مطولاً على البطاقة** للخيارات: تعديل، حذف، إلغاء.
-4. **Connect** يفحص الوصول فقط (لا يفتح ولا يحفظ) ويظهر النتيجة مع كود HTTP.
-   **Enter** يفتح السيرفر بدون حفظ.
-5. إذا طلب السيرفر ملفاً شخصياً (بروفايل) من سيلّي تافرن، ادخله مباشرة؛
-   وإذا لا، تستطيع التبديل من داخل السيرفر نفسه بخطوات بسيطة.
-6. **التنبيه:** نص صغير فوق أول صف بطاقات يعلّمك الحركتين.
-   يختفي نهائياً بعد ضغطة مطولة واحدة ودخول واحد معاً،
-   ولا يعود إلا إذا مسحت بيانات التطبيق.
-7. رفع الصور والملفات يعمل من داخل السيرفر (نافذة اختيار النظام).
-8. قوائم الاختيار داخل السيرفر تعمل عبر جسر مدمج يقرأ الخيارات الحقيقية من الصفحة.
+## How does it work?
 
-## خطوات البناء
+1. **Add a server:** name + address + optional username and password, then **Save**.
+   Saving works even if the server is offline, and it never opens the server.
+2. **Tap a card once to enter** the server.
+3. **Long-press a card** for options: Edit, Delete, Cancel.
+4. **Connect** probes reachability only (never opens, never saves) and shows
+   the result with the HTTP code. **Enter** opens the server without saving.
+5. If the server asks for a specific profile from SillyTavern, enter it
+   directly; if not, you can switch from inside the server itself with
+   simple steps.
+6. **The hint:** a small line above the first card row teaches both gestures.
+   It disappears forever after one long-press and one enter together,
+   and returns only if app data is wiped.
+7. Image and file upload works from inside the server (system chooser).
+8. Select menus inside the server work through a built-in bridge that reads
+   the real options from the live page.
 
-CI يبني نسخة release عند كل push إلى `main` (انظر `.github/workflows/build.yml`).
-البناء المحلي يحتاج Android SDK + Gradle:
+## Build steps
+
+CI builds the release APK on every push to `main` (see
+`.github/workflows/build.yml`). A local build needs the Android SDK + Gradle:
 
 ```
 gradle :app:assembleRelease
 ```
 
-مفتاح التوقيع خاص ولا يوجد أبداً داخل هذا المستودع.
+The signing key is private and is never inside this repository.
 
-## الخاص يبقى خاصاً
+## Private stays private
 
-أي شيء خاص بك (مفاتيح، كلمات مرور، بيانات شخصية) يبقى عندك في Drive،
-ولا يوضع أبداً في هذا المستودع العام.
+Anything private of yours (keys, passwords, personal data) stays with you
+in Drive, and is never placed in this public repository.
 
-## فورك وتعديل
+## Fork and modify
 
-المستودع مفتوح: انسخه (Fork) وعدّله كما تريد.
+This repository is open: fork it and modify it as you like.
 
-## وجدت خطأ؟
+## Found a bug?
 
-إذا لاقيت أي خطأ أثناء الاستعمال، اترك الخطأ هنا (افتح Issue) حتى يُصلَّح.
+If you find any error while using the app, leave the error here
+(open an Issue) so it can be fixed.
 
-## ملاحظات
+## Notes
 
-- الحالة: v0.5.2 — نسخة كاملة.
-- arm64-v8a فقط: GeckoView يضم مكتبات أصلية كبيرة لكل معمارية.
-- كود نظيف (clean-room): المعمارية مستوحاة من الوصف العام لمشروع Tavernium؛
-  لم يُنسخ أي كود منه.
-- الحزمة: `com.aqil.lotusshell`.
-- الترخيص: يحدد لاحقاً.
+- Status: v0.5.2 — complete release.
+- arm64-v8a only: GeckoView ships large native libraries per architecture.
+- Clean-room code: the architecture is informed by Tavernium's own public
+  description; no Tavernium code is copied here.
+- Package: `com.aqil.lotusshell`.
+- License: to be decided.
