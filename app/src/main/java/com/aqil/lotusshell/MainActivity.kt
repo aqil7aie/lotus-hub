@@ -73,6 +73,16 @@ import org.json.JSONObject
  * letterboxes the window below the camera cutout — the black void's
  * second half. SHORT_EDGES (API 28+) lets ST draw behind the camera
  * like TauriTavern's edge-to-edge WebView does.
+ * v0.4.8 (strip gone, not recolored): v0.4.7 only fixed the window
+ * half — the window may now reach the cutout, but ST's page never
+ * declares viewport-fit=cover, so Gecko keeps the page below the
+ * cutout and the strip shows the view background: black in v0.4.5
+ * (window background) became white in v0.4.7 (GeckoView's default
+ * white background). Two halves now: a document_start content
+ * script adds viewport-fit=cover to the page's viewport meta before
+ * first layout, so the page itself extends to the top edge; and the
+ * GeckoView background is forced black, so no unpainted area can
+ * ever show white again.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -281,6 +291,11 @@ class MainActivity : Activity() {
         session = GeckoSession(settings)
         session.open(runtime)
         geckoView.setSession(session)
+        // v0.4.8: never show white. GeckoView's default background is
+        // white, so any area the page does not paint (the cutout strip
+        // before the viewport fix lands, or during load) showed as a
+        // white band. Black is the only acceptable fallback.
+        geckoView.setBackgroundColor(android.graphics.Color.BLACK)
 
         // v0.4.4 select bridge: install the bundled content-script
         // extension. If it fails, the PromptDelegate fallback below stays
