@@ -128,6 +128,15 @@ import org.json.JSONObject
  * connection, its message sits above the buttons; a
  * nameless card shows its URL once, with a globe icon;
  * deleting the last card returns to the form.
+ * v0.5.1C (Connect fix, researched before building per
+ * Aqil's order 2026-10-26 17:16): Android 9+ blocks
+ * cleartext HTTP by default, so the probe's
+ * HttpURLConnection was refused while GeckoView (its
+ * own network stack) loaded the same URL fine — hence
+ * ENTER worked and Connect failed on a running server.
+ * Manifest now sets usesCleartextTraffic=true (this app
+ * exists for local http servers), and a failed probe
+ * reports its real cause instead of "no response".
  * v0.5.1 (Hub, Aqil's pick): black home grid of saved-server
  * cards (name-labeled, one tap opens, long-press deletes) +
  * add-server form (name, server, optional user/password;
@@ -944,6 +953,7 @@ class MainActivity : Activity() {
         setFormMessage("Connecting…", true)
         Thread {
             var code: Int? = null
+            var failure: String? = null
             try {
                 val conn = java.net.URL(url).openConnection()
                     as java.net.HttpURLConnection
@@ -955,9 +965,15 @@ class MainActivity : Activity() {
                 code = conn.responseCode
             } catch (e: Exception) {
                 code = null
+                // v0.5.1C: NEVER swallow the cause again —
+                // the generic "no response" hid the real
+                // defect (cleartext policy) for two versions.
+                failure = e.message ?: e.javaClass.simpleName
             }
             val resultText = if (code != null) {
                 "Connection successful — HTTP $code."
+            } else if (failure != null) {
+                "Connection failed — $failure"
             } else {
                 "Connection failed — no response."
             }
