@@ -63,6 +63,12 @@ import org.json.JSONObject
  * window focus; plus the "null" group-prefix cleanup (JS null group
  * labels arrived as the literal string "null"). Built on v0.4.4,
  * which Aqil keeps installed as the fallback if anything breaks.
+ * v0.4.6 (fullscreen fix): v0.4.5's LAYOUT_* flags caused two
+ * regressions — a black void strip at the top (LAYOUT_STABLE reserves
+ * the status-bar area even when bars are hidden) and the keyboard
+ * covering the composer again (broken adjustResize). Dropped all
+ * LAYOUT_* flags; the hide flags alone give the full screen now that
+ * the bars take no space, restoring v0.4's geometry.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -202,18 +208,23 @@ class MainActivity : Activity() {
         jsSelectDialog = dialog
     }
 
-    // v0.4.5: the whole screen belongs to the app — status bar
+    // v0.4.6: the whole screen belongs to the app — status bar
     // (network, battery, clock) and navigation bar stay hidden so ST
     // gets every pixel. Sticky immersive: a swipe shows the bars
     // briefly, then they hide again by themselves. Re-applied whenever
     // the window regains focus (dialogs and swipes can drop the flags).
+    // NOTE — no LAYOUT_* flags, deliberately (v0.4.5 lesson): LAYOUT_STABLE
+    // lays content out AS IF the bars were visible, so it reserved the
+    // status-bar strip as a black void even with the bars hidden, and
+    // the layout flags broke the keyboard resize that v0.4's
+    // adjustResize had fixed (composer covered by the keyboard instead
+    // of jumping above it). With the bars hidden, they take no space,
+    // so the plain hide flags already give the full screen, and the
+    // window geometry is exactly v0.4's proven one.
     private fun enableImmersive() {
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
             )
