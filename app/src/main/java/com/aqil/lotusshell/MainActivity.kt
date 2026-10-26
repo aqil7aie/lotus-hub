@@ -1,6 +1,7 @@
 package com.aqil.lotusshell
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.os.Bundle
 import android.view.View
@@ -15,6 +16,9 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate
+import org.mozilla.geckoview.GeckoSession.PromptDelegate
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.ChoicePrompt
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebRequestError
@@ -33,6 +37,13 @@ import org.mozilla.geckoview.WebRequestError
  * reflow), and mobile viewport + mobile user agent locked in so ST serves
  * its lighter mobile layout. If the hitch stays, it is the phone GPU +
  * ST's heavy page, not the shell — accepted as-is per Aqil's word.
+ * v0.4.2 (dropdown fix): GeckoView has NO built-in UI — a page's native
+ * <select> menus only appear if the app implements PromptDelegate. The
+ * shell never did, so every ST select (API provider, connection profile,
+ * model lists) silently did nothing when tapped. Now onChoicePrompt
+ * shows the options as a native single-choice list dialog and confirms
+ * the tapped item back to the page. Single-choice only; ST's selects
+ * are single, and <select multiple> is not used in its settings.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -91,6 +102,48 @@ class MainActivity : Activity() {
                 statusView.visibility = View.VISIBLE
                 showAddressRow()
                 return null
+            }
+        }
+
+        // Native <select> menus are content prompts: without this
+        // delegate they silently do nothing when tapped.
+        session.promptDelegate = object : PromptDelegate {
+            override fun onChoicePrompt(
+                session: GeckoSession,
+                prompt: ChoicePrompt
+            ): GeckoResult<PromptResponse>? {
+                val result = GeckoResult<PromptResponse>()
+                // Flatten optgroups: group headers carry children and are
+                // not selectable themselves.
+                val flat = mutableListOf<ChoicePrompt.Choice>()
+                fun addAll(list: Array<ChoicePrompt.Choice>) {
+                    for (choice in list) {
+                        val children = choice.children
+                        if (children != null && children.isNotEmpty()) {
+                            addAll(children)
+                        } else {
+                            flat.add(choice)
+                        }
+                    }
+                }
+                addAll(prompt.choices)
+                val labels = flat.map { it.label }.toTypedArray()
+                val checked = flat.indexOfFirst { it.selected }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(prompt.title)
+                    .setSingleChoiceItems(labels, checked) { dialog, which ->
+                        result.complete(prompt.confirm(arrayOf(flat[which])))
+                        dialog.dismiss()
+                    }
+                    .setNegativeButton("إلغاء") { dialog, _ ->
+                        result.complete(prompt.dismiss())
+                        dialog.dismiss()
+                    }
+                    .setOnCancelListener {
+                        result.complete(prompt.dismiss())
+                    }
+                    .show()
+                return result
             }
         }
 
