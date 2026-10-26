@@ -117,8 +117,34 @@ class MainActivity : Activity() {
                 // so the choices are used as delivered. ST's settings
                 // selects are flat lists, which is all this needs.
                 val choices = prompt.choices
-                val labels = choices.map { it.label }.toTypedArray()
+                if (choices.isEmpty()) {
+                    // Visible diagnostic: ST rebuilt this select with zero
+                    // options (seen on the chat-completion provider list).
+                    // Showing the fact beats a dialog that never opens.
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle(prompt.title)
+                        .setMessage("القائمة وصلت فارغة من الصفحة (٠ خيار).")
+                        .setPositiveButton("حسناً") { dialog, _ ->
+                            result.complete(prompt.dismiss())
+                            dialog.dismiss()
+                        }
+                        .setOnCancelListener {
+                            result.complete(prompt.dismiss())
+                        }
+                        .show()
+                    return result
+                }
+                // Some ST selects (chat-completion provider list) arrive
+                // with blank labels: the rows exist but carry no text.
+                // Fall back to numbered rows so selection still works,
+                // and mark the currently selected row.
                 val checked = choices.indexOfFirst { it.selected }
+                val labels = choices.mapIndexed { i, choice ->
+                    val text = choice.label?.takeIf { it.isNotBlank() }
+                    if (text != null) text
+                    else if (i == checked) "خيار ${i + 1} (المحدد حالياً)"
+                    else "خيار ${i + 1}"
+                }.toTypedArray()
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(prompt.title)
                     .setSingleChoiceItems(labels, checked) { dialog, which ->
