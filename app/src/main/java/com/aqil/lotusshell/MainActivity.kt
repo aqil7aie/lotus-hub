@@ -83,6 +83,22 @@ import org.json.JSONObject
  * first layout, so the page itself extends to the top edge; and the
  * GeckoView background is forced black, so no unpainted area can
  * ever show white again.
+ * v0.4.9 (the extension-update lesson): 0.4.8's strip stayed black
+ * on Aqil's phone, which proves 0.4.8 IS installed (0.4.7 showed
+ * white) but its viewport script never ran — a bundled GeckoView
+ * extension does not refresh when the app updates; the old installed
+ * extension keeps running and the new script never loads. The layout
+ * file was audited and is clean (no fitsSystemWindows, no margins;
+ * the GeckoView fills the window), so the strip lives inside
+ * GeckoView. Three levers at once: (1) a NEW extension id, forcing
+ * a fresh install of the viewport script (the stale one stays but
+ * is inert for selects — the DOM attach flag is shared, so only one
+ * script ever attaches); (2) the same viewport patch injected
+ * natively on every successful page load, so the fix no longer
+ * depends on extension-update semantics at all; (3) true
+ * edge-to-edge decor (setDecorFitsSystemWindows(false), API 30+) —
+ * TauriTavern's enableEdgeToEdge call — so the decor itself stops
+ * insetting content away from the cutout.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -267,6 +283,14 @@ class MainActivity : Activity() {
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             window.attributes = attrs
         }
+        // v0.4.9: true edge-to-edge decor (TauriTavern's
+        // enableEdgeToEdge). The hide flags alone leave the decor
+        // fitting system windows, which can still inset content away
+        // from the cutout; opting out lays the content under the bars
+        // and the cutout for real. API 30+ only.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
         enableImmersive()
 
         geckoView = findViewById(R.id.geckoview)
@@ -300,9 +324,14 @@ class MainActivity : Activity() {
         // v0.4.4 select bridge: install the bundled content-script
         // extension. If it fails, the PromptDelegate fallback below stays
         // in place, so selects keep working as in v0.4.3.
+        // v0.4.9: NEW extension id. The v0.4.4 id's installed copy
+        // never refreshes on app update, so the v0.4.8 viewport script
+        // never loaded on Aqil's phone; a new id forces a fresh
+        // install. The stale extension stays installed but cannot
+        // double-attach selects (the DOM attach flag is shared).
         runtime.webExtensionController.ensureBuiltIn(
             "resource://android/assets/select-bridge/",
-            "select-bridge@lotus-shell"
+            "lotus-shell-bridge@lotus-shell"
         ).accept(
             { extension ->
                 extension?.let { ext ->
@@ -415,6 +444,11 @@ class MainActivity : Activity() {
                 if (success) {
                     hideAddressRow()
                     statusView.visibility = View.GONE
+                    // v0.4.9: native backup of the viewport-cover
+                    // script — the same patch, injected from the app
+                    // on every successful load, so the fix no longer
+                    // depends on extension-update semantics.
+                    session.evaluateJavascript(VIEWPORT_COVER_JS)
                 } else {
                     showAddressRow()
                     if (statusView.visibility == View.GONE) {
@@ -482,5 +516,11 @@ class MainActivity : Activity() {
     companion object {
         private const val PREFS = "lotus-shell-prefs"
         private const val KEY_URL = "server_url"
+        // Same patch as assets/select-bridge/viewport-cover.js, kept
+        // as a native backup: if the page's viewport meta lacks
+        // viewport-fit, add cover so the page paints into the cutout.
+        private const val VIEWPORT_COVER_JS = """
+            (function(){try{var m=document.querySelector('meta[name="viewport"]');if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');m.setAttribute('content','width=device-width, initial-scale=1, viewport-fit=cover');(document.head||document.documentElement).appendChild(m);return;}var c=m.getAttribute('content')||'';if(!/viewport-fit\s*=/.test(c)){m.setAttribute('content',(c?c.replace(/,\s*$/,'')+', ':'')+'viewport-fit=cover');}}catch(e){}})();
+        """
     }
 }
