@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate
@@ -25,6 +26,13 @@ import org.mozilla.geckoview.WebRequestError
  * Deliberately small: no third-party dependencies besides GeckoView itself.
  * v0.4: no auto-load on launch (saved address prefilled only); the row
  * hides only on successful load (onPageStop success), not on load start.
+ * v0.4.1 (smoothness attempt): GeckoView exposes no renderer-speed pref
+ * to apps, so the shell uses the real levers it has — input auto-zoom
+ * off (no zoom jump + reflow when tapping the chat box), automatic font
+ * size adjustment off (web layout keeps its own sizes, no system-scale
+ * reflow), and mobile viewport + mobile user agent locked in so ST serves
+ * its lighter mobile layout. If the hitch stays, it is the phone GPU +
+ * ST's heavy page, not the shell — accepted as-is per Aqil's word.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -53,8 +61,18 @@ class MainActivity : Activity() {
         val goButton: Button = findViewById(R.id.goButton)
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-        val runtime = GeckoRuntime.create(this)
-        val settings = GeckoSessionSettings.Builder().allowJavascript(true).build()
+        // Smoothness levers (see KDoc): input auto-zoom off, automatic
+        // font-size adjustment off; mobile viewport + mobile UA locked in.
+        val runtimeSettings = GeckoRuntimeSettings.Builder()
+            .inputAutoZoomEnabled(false)
+            .automaticFontSizeAdjustment(false)
+            .build()
+        val runtime = GeckoRuntime.create(this, runtimeSettings)
+        val settings = GeckoSessionSettings.Builder()
+            .allowJavascript(true)
+            .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+            .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+            .build()
         session = GeckoSession(settings)
         session.open(runtime)
         geckoView.setSession(session)
