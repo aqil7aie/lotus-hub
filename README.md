@@ -1,56 +1,57 @@
-# Lotus Shell
+# Lotus Hub
 
-A Gecko-powered shell for self-hosted SillyTavern / Neconyan — the same idea
-as Tavernium (a light wrapper that loads your own server address and adds
-phone-side features), but on Mozilla's Gecko engine instead of Chromium's
-WebView.
+[العربية](README.md) · [English](README.en.md) · [中文](README.zh-CN.md)
 
-Why: on Aqil's phone, Chromium is fast on first launch and then drags by
-itself; the ST family has always behaved best on Gecko. This shell is the
-definitive test of whether Neconyan's stutter is the engine or Neconyan
-itself — and, if Gecko wins, the daily driver for it.
+## ما هو Lotus Hub؟
 
-## Status: v0 skeleton
+Lotus Hub تطبيق أندرويد أصلي يفتح سيرفراتك المحلية بملء الشاشة، كأنها تطبيقات مستقلة:
+سيلّي تافرن وفروعه، وأي سيرفر محلي آخر.
 
-What exists now: an address bar + GeckoView + remembering the last server
-address. That is it, on purpose — one short step at a time.
+## كيف يعمل؟
 
-## Roadmap (in order)
+1. **أضف سيرفراً:** الاسم + العنوان + اسم مستخدم وكلمة مرور (اختياريان)، ثم **Save**.
+   الحفظ يعمل حتى لو كان السيرفر مطفأً، ولا يفتح السيرفر.
+2. **اضغط البطاقة مرة واحدة للدخول** إلى السيرفر.
+3. **اضغط مطولاً على البطاقة** للخيارات: تعديل، حذف، إلغاء.
+4. **Connect** يفحص الوصول فقط (لا يفتح ولا يحفظ) ويظهر النتيجة مع كود HTTP.
+   **Enter** يفتح السيرفر بدون حفظ.
+5. إذا طلب السيرفر ملفاً شخصياً (بروفايل) من سيلّي تافرن، ادخله مباشرة؛
+   وإذا لا، تستطيع التبديل من داخل السيرفر نفسه بخطوات بسيطة.
+6. **التنبيه:** نص صغير فوق أول صف بطاقات يعلّمك الحركتين.
+   يختفي نهائياً بعد ضغطة مطولة واحدة ودخول واحد معاً،
+   ولا يعود إلا إذا مسحت بيانات التطبيق.
+7. رفع الصور والملفات يعمل من داخل السيرفر (نافذة اختيار النظام).
+8. قوائم الاختيار داخل السيرفر تعمل عبر جسر مدمج يقرأ الخيارات الحقيقية من الصفحة.
 
-1. Multi-server list: SillyTavern + Neconyan + more, one tap to switch
-   (Tavernium holds one server only — this is the first real delta).
-2. Full Arabic UI (strings moved to `strings.xml`, RTL layout).
-3. Back navigation (`session.goBack`).
-4. Keep-alive: foreground service + content-script visibility handling.
-5. Reply notifications: listen for the ST `MESSAGE_RECEIVED` event.
-6. Downloads routed to the Downloads folder.
-7. Burn-in guard overlay for long waits.
-8. In-app updates with signature + SHA-256 checks (Tavernium-style).
+## خطوات البناء
 
-## Build
-
-CI builds the debug APK on every push to `main` (see
-`.github/workflows/build.yml`). Local build needs Android SDK + Gradle 8.7:
+CI يبني نسخة release عند كل push إلى `main` (انظر `.github/workflows/build.yml`).
+البناء المحلي يحتاج Android SDK + Gradle:
 
 ```
-gradle :app:assembleDebug
+gradle :app:assembleRelease
 ```
 
-Release signing is TODO until the keystore secrets exist (see the workflow
-file — nothing is faked there).
+مفتاح التوقيع خاص ولا يوجد أبداً داخل هذا المستودع.
 
-## Notes
+## الخاص يبقى خاصاً
 
-- Native Android (Kotlin) only: no Flutter binding for GeckoView exists,
-  so this cannot be a Flutter app the way Luna/ForkSilly are.
-- arm64-v8a only: GeckoView ships ~170MB of native libs per ABI, so a
-  universal APK measured 507MB; arm64-only (Aqil's phone) is ~180MB.
-- Only direct dependency is GeckoView itself (which pulls AndroidX
-  transitives — that is what the `android.useAndroidX=true` flag is for).
-  No other third-party libraries are added by us.
-- Clean-room code: the architecture is informed by Tavernium's own public
-  README description (which documents its approach in detail); no
-  Tavernium code is copied here.
-- License: TBD by Aqil.
-- Package `com.aqil.lotusshell` and the name "Lotus Shell" are changeable
-  in one word — they are placeholders until he fixes them.
+أي شيء خاص بك (مفاتيح، كلمات مرور، بيانات شخصية) يبقى عندك في Drive،
+ولا يوضع أبداً في هذا المستودع العام.
+
+## فورك وتعديل
+
+المستودع مفتوح: انسخه (Fork) وعدّله كما تريد.
+
+## وجدت خطأ؟
+
+إذا لاقيت أي خطأ أثناء الاستعمال، اترك الخطأ هنا (افتح Issue) حتى يُصلَّح.
+
+## ملاحظات
+
+- الحالة: v0.5.2 — نسخة كاملة.
+- arm64-v8a فقط: GeckoView يضم مكتبات أصلية كبيرة لكل معمارية.
+- كود نظيف (clean-room): المعمارية مستوحاة من الوصف العام لمشروع Tavernium؛
+  لم يُنسخ أي كود منه.
+- الحزمة: `com.aqil.lotusshell`.
+- الترخيص: يحدد لاحقاً.
