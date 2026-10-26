@@ -58,6 +58,11 @@ import org.json.JSONObject
  * returns through the port and the script applies it as a native
  * selection (selectedIndex + input/change events). The PromptDelegate
  * path stays as fallback for selects the script skips.
+ * v0.4.5 (fullscreen): sticky immersive mode — status bar and
+ * navigation bar hidden so ST uses the whole screen, re-applied on
+ * window focus; plus the "null" group-prefix cleanup (JS null group
+ * labels arrived as the literal string "null"). Built on v0.4.4,
+ * which Aqil keeps installed as the fallback if anything breaks.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -146,7 +151,11 @@ class MainActivity : Activity() {
             val o = options.optJSONObject(i)
             val text = o?.optString("text")?.takeIf { it.isNotBlank() }
             val value = o?.optString("value")?.takeIf { it.isNotBlank() }
-            val group = o?.optString("group")?.takeIf { it.isNotBlank() }
+            // Gecko's port JSON turns a JS null group label into the
+            // literal string "null": treat it as blank, like a real
+            // blank, so rows show just the provider name.
+            val group = o?.optString("group")
+                ?.takeIf { it.isNotBlank() && it != "null" }
             val base = text ?: value ?: "خيار ${i + 1}"
             if (group != null) "$group — $base" else base
         }
@@ -193,9 +202,32 @@ class MainActivity : Activity() {
         jsSelectDialog = dialog
     }
 
+    // v0.4.5: the whole screen belongs to the app — status bar
+    // (network, battery, clock) and navigation bar stay hidden so ST
+    // gets every pixel. Sticky immersive: a swipe shows the bars
+    // briefly, then they hide again by themselves. Re-applied whenever
+    // the window regains focus (dialogs and swipes can drop the flags).
+    private fun enableImmersive() {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enableImmersive()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        enableImmersive()
 
         geckoView = findViewById(R.id.geckoview)
         urlInput = findViewById(R.id.serverUrl)
