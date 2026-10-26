@@ -69,6 +69,10 @@ import org.json.JSONObject
  * covering the composer again (broken adjustResize). Dropped all
  * LAYOUT_* flags; the hide flags alone give the full screen now that
  * the bars take no space, restoring v0.4's geometry.
+ * v0.4.7 (behind the camera): Android's default cutout mode
+ * letterboxes the window below the camera cutout — the black void's
+ * second half. SHORT_EDGES (API 28+) lets ST draw behind the camera
+ * like TauriTavern's edge-to-edge WebView does.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -238,6 +242,21 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // v0.4.7: draw behind the camera cutout. Android's default
+        // cutout mode letterboxes the window below the cutout in
+        // portrait — that full-width strip is exactly the black void
+        // Aqil saw in v0.4.5. SHORT_EDGES lets the window extend into
+        // the cutout on the short edges (top in portrait), so ST fills
+        // the whole screen like TauriTavern does (its AndroidWindowLayout
+        // runs edge-to-edge with the WebView at full window size and
+        // zero insets in immersive mode). API 28+ only; older phones
+        // keep the previous behaviour.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val attrs = window.attributes
+            attrs.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = attrs
+        }
         enableImmersive()
 
         geckoView = findViewById(R.id.geckoview)
