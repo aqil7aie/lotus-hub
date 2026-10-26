@@ -1,6 +1,6 @@
 plugins {
     id "com.android.application"
-    id "org.jetbrains.kotlin.android"
+    // No kotlin-android plugin: AGP 9 provides Kotlin itself.
 }
 
 android {
@@ -25,14 +25,15 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    // No kotlinOptions block: AGP 9's built-in Kotlin support derives the
+    // JVM target from compileOptions above.
+}
 }
 
 dependencies {
     // Latest stable GeckoView, verified from Mozilla's maven metadata
     // (last updated 2026-10-21). Single artifact, no per-arch flavors.
+    // Kotlin stdlib comes from AGP 9's built-in Kotlin support — no
+    // explicit stdlib line, to avoid version fights with it.
     implementation "org.mozilla.geckoview:geckoview:158.0.20261021001945"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
 }
