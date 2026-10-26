@@ -21,7 +21,10 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.ChoicePrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebRequestError
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Lotus Shell v0 skeleton: a GeckoView shell that loads one self-hosted
@@ -44,6 +47,17 @@ import org.mozilla.geckoview.WebRequestError
  * shows the options as a native single-choice list dialog and confirms
  * the tapped item back to the page. Single-choice only; ST's selects
  * are single, and <select multiple> is not used in its settings.
+ * v0.4.4 (select bridge, the real fix): Gecko's Choice snapshot
+ * arrives blank for some ST/Neconyan selects (Neconyan's API-type
+ * select: 2 options, blank labels, no selection) while the page shows
+ * the right values — the snapshot cannot be trusted for those. A
+ * bundled WebExtension content script (assets/select-bridge) now
+ * intercepts select taps, reads the real options from the live DOM
+ * (text, falling back to value, then number; optgroup as prefix; true
+ * selected index), and the app shows that dialog instead; the choice
+ * returns through the port and the script applies it as a native
+ * selection (selectedIndex + input/change events). The PromptDelegate
+ * path stays as fallback for selects the script skips.
  * TODO (next phases, in order):
  *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
  *  2. Full Arabic strings in strings.xml.
@@ -60,6 +74,124 @@ class MainActivity : Activity() {
     private lateinit var addressRow: LinearLayout
     private lateinit var statusView: TextView
     private var sessionCanGoBack = false
+
+    // v0.4.4 select bridge: the content script reads a tapped select's
+    // real options from the live DOM (text, value, selected, disabled,
+    // optgroup) because Gecko's Choice snapshot arrives blank for some
+    // ST/Neconyan selects. The app shows the dialog and sends the chosen
+    // index back through the port; the script applies it as a native
+    // selection (selectedIndex + input/change events).
+    private var selectPort: WebExtension.Port? = null
+    private var jsSelectDialogOpen = false
+    private var jsSelectDialog: AlertDialog? = null
+    private var pendingSelectPort: WebExtension.Port? = null
+    private var pendingSelectId: Int = -1
+    private var nativeSelectDialog: AlertDialog? = null
+    private var nativePromptResult: GeckoResult<PromptResponse>? = null
+    private var nativePrompt: ChoicePrompt? = null
+
+    private val selectPortDelegate = object : WebExtension.PortDelegate {
+        override fun onPortMessage(message: Any, port: WebExtension.Port) {
+            if (message !is JSONObject) return
+            if (message.optString("type") != "select-open") return
+            runOnUiThread { showJsSelectDialog(message, port) }
+        }
+
+        override fun onDisconnect(port: WebExtension.Port) {
+            if (port == selectPort) selectPort = null
+            if (port == pendingSelectPort) {
+                pendingSelectPort = null
+                pendingSelectId = -1
+                jsSelectDialog?.dismiss()
+                jsSelectDialog = null
+                jsSelectDialogOpen = false
+            }
+        }
+    }
+
+    private val selectMessageDelegate = object : WebExtension.MessageDelegate {
+        override fun onConnect(port: WebExtension.Port) {
+            selectPort = port
+            port.setDelegate(selectPortDelegate)
+        }
+
+        override fun onMessage(
+            nativeApp: String,
+            message: Any,
+            sender: WebExtension.MessageSender
+        ): GeckoResult<Any>? {
+            return null
+        }
+    }
+
+    private fun showJsSelectDialog(json: JSONObject, port: WebExtension.Port) {
+        // Duplicate delivery guard: the same tap must never open two
+        // dialogs (both delegate registrations may report one port).
+        if (jsSelectDialogOpen) return
+        val id = json.optInt("id", -1)
+        val options: JSONArray = json.optJSONArray("options") ?: JSONArray()
+        if (options.length() == 0) return
+        // If the native prompt for this same tap already opened, replace
+        // it: the DOM reading is authoritative, the snapshot is not.
+        nativeSelectDialog?.let { dlg ->
+            if (dlg.isShowing) dlg.dismiss()
+            nativeSelectDialog = null
+        }
+        nativePromptResult?.let { res ->
+            nativePrompt?.let { pr -> res.complete(pr.dismiss()) }
+            nativePromptResult = null
+            nativePrompt = null
+        }
+        val labels = Array(options.length()) { i ->
+            val o = options.optJSONObject(i)
+            val text = o?.optString("text")?.takeIf { it.isNotBlank() }
+            val value = o?.optString("value")?.takeIf { it.isNotBlank() }
+            val group = o?.optString("group")?.takeIf { it.isNotBlank() }
+            val base = text ?: value ?: "خيار ${i + 1}"
+            if (group != null) "$group — $base" else base
+        }
+        var checked = json.optInt("selectedIndex", -1)
+        if (checked < 0 || checked >= options.length()) {
+            checked = -1
+            for (i in 0 until options.length()) {
+                if (options.optJSONObject(i)?.optBoolean("selected") == true) {
+                    checked = i
+                    break
+                }
+            }
+        }
+        val title = json.optString("label").takeIf { it.isNotBlank() }
+            ?: "اختر من القائمة"
+        jsSelectDialogOpen = true
+        pendingSelectPort = port
+        pendingSelectId = id
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setSingleChoiceItems(labels, checked) { dlg, which ->
+                val reply = JSONObject()
+                reply.put("type", "select-choice")
+                reply.put("id", id)
+                reply.put("index", which)
+                port.postMessage(reply)
+                jsSelectDialogOpen = false
+                pendingSelectPort = null
+                pendingSelectId = -1
+                dlg.dismiss()
+            }
+            .setNegativeButton("إلغاء") { dlg, _ ->
+                jsSelectDialogOpen = false
+                pendingSelectPort = null
+                pendingSelectId = -1
+                dlg.dismiss()
+            }
+            .setOnCancelListener {
+                jsSelectDialogOpen = false
+                pendingSelectPort = null
+                pendingSelectId = -1
+            }
+            .show()
+        jsSelectDialog = dialog
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +220,22 @@ class MainActivity : Activity() {
         session.open(runtime)
         geckoView.setSession(session)
 
+        // v0.4.4 select bridge: install the bundled content-script
+        // extension. If it fails, the PromptDelegate fallback below stays
+        // in place, so selects keep working as in v0.4.3.
+        runtime.webExtensionController.ensureBuiltIn(
+            "resource://android/assets/select-bridge/",
+            "select-bridge@lotus-shell"
+        ).accept(
+            { extension ->
+                session.webExtensionController.setMessageDelegate(
+                    extension, selectMessageDelegate, "lotus_shell"
+                )
+                extension.setMessageDelegate(selectMessageDelegate, "lotus_shell")
+            },
+            { /* bridge unavailable: native fallback stays */ }
+        )
+
         session.navigationDelegate = object : NavigationDelegate {
             override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
                 sessionCanGoBack = canGoBack
@@ -106,21 +254,30 @@ class MainActivity : Activity() {
         }
 
         // Native <select> menus are content prompts: without this
-        // delegate they silently do nothing when tapped.
+        // delegate they silently do nothing when tapped. This is the
+        // FALLBACK path (v0.4.2/v0.4.3): the select bridge above handles
+        // taps first with real DOM texts, and this path only runs when
+        // the bridge did not (extension missing, or a select the script
+        // skipped, e.g. <select multiple>).
         session.promptDelegate = object : PromptDelegate {
             override fun onChoicePrompt(
                 session: GeckoSession,
                 prompt: ChoicePrompt
             ): GeckoResult<PromptResponse>? {
                 val result = GeckoResult<PromptResponse>()
+                // The bridge already opened its dialog for this tap:
+                // dismiss the native prompt silently, never a 2nd dialog.
+                if (jsSelectDialogOpen) {
+                    result.complete(prompt.dismiss())
+                    return result
+                }
                 // GeckoView 158's Choice has no children/optgroup member,
-                // so the choices are used as delivered. ST's settings
-                // selects are flat lists, which is all this needs.
+                // so the choices are used as delivered.
                 val choices = prompt.choices
                 if (choices.isEmpty()) {
-                    // Visible diagnostic: ST rebuilt this select with zero
-                    // options (seen on the chat-completion provider list).
-                    // Showing the fact beats a dialog that never opens.
+                    // Visible diagnostic: the select arrived with zero
+                    // options. Showing the fact beats a dialog that
+                    // never opens.
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle(prompt.title)
                         .setMessage("القائمة وصلت فارغة من الصفحة (٠ خيار).")
@@ -134,10 +291,9 @@ class MainActivity : Activity() {
                         .show()
                     return result
                 }
-                // Some ST selects (chat-completion provider list) arrive
-                // with blank labels: the rows exist but carry no text.
-                // Fall back to numbered rows so selection still works,
-                // and mark the currently selected row.
+                // Some ST selects arrive with blank labels: the rows
+                // exist but carry no text. Fall back to numbered rows
+                // so selection still works, and mark the selected row.
                 val checked = choices.indexOfFirst { it.selected }
                 val labels = choices.mapIndexed { i, choice ->
                     val text = choice.label?.takeIf { it.isNotBlank() }
@@ -145,20 +301,32 @@ class MainActivity : Activity() {
                     else if (i == checked) "خيار ${i + 1} (المحدد حالياً)"
                     else "خيار ${i + 1}"
                 }.toTypedArray()
-                AlertDialog.Builder(this@MainActivity)
+                nativePromptResult = result
+                nativePrompt = prompt
+                val dialog = AlertDialog.Builder(this@MainActivity)
                     .setTitle(prompt.title)
-                    .setSingleChoiceItems(labels, checked) { dialog, which ->
+                    .setSingleChoiceItems(labels, checked) { dlg, which ->
                         result.complete(prompt.confirm(arrayOf(choices[which])))
-                        dialog.dismiss()
+                        nativePromptResult = null
+                        nativePrompt = null
+                        nativeSelectDialog = null
+                        dlg.dismiss()
                     }
-                    .setNegativeButton("إلغاء") { dialog, _ ->
+                    .setNegativeButton("إلغاء") { dlg, _ ->
                         result.complete(prompt.dismiss())
-                        dialog.dismiss()
+                        nativePromptResult = null
+                        nativePrompt = null
+                        nativeSelectDialog = null
+                        dlg.dismiss()
                     }
                     .setOnCancelListener {
                         result.complete(prompt.dismiss())
+                        nativePromptResult = null
+                        nativePrompt = null
+                        nativeSelectDialog = null
                     }
                     .show()
+                nativeSelectDialog = dialog
                 return result
             }
         }
