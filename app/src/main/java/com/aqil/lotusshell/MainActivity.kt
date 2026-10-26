@@ -123,14 +123,15 @@ import org.json.JSONObject
  * offers Edit + Delete (edit replaces in place); legacy
  * migration runs ONCE so a deleted card never resurrects;
  * the form is always clean (no stale typing, no "saved by
- * itself"); the save button is labeled Save; Test reports
- * the HTTP status + a toast and its message sits above the
- * buttons; a nameless card shows its URL once, with a globe
- * icon; deleting the last card returns to the form.
+ * itself"); the save button is labeled Save; Connect
+ * (replacing Test) probes and shows green only for a real
+ * connection, its message sits above the buttons; a
+ * nameless card shows its URL once, with a globe icon;
+ * deleting the last card returns to the form.
  * v0.5.1 (Hub, Aqil's pick): black home grid of saved-server
  * cards (name-labeled, one tap opens, long-press deletes) +
  * add-server form (name, server, optional user/password;
- * Save saves even if offline and never navigates, Test
+ * Save saves even if offline and never navigates, Connect
  * probes reachability only, Enter opens without saving; form
  * has Back to the grid; + top-right reopens the form) +
  * file upload via PromptDelegate.onFilePrompt (system chooser).
@@ -158,7 +159,7 @@ class MainActivity : Activity() {
     private lateinit var userInput: EditText
     private lateinit var passInput: EditText
     private lateinit var saveButton: Button
-    private lateinit var testButton: Button
+    private lateinit var connectButton: Button
     private lateinit var enterButton: Button
     private lateinit var backButton: Button
     private lateinit var addButton: Button
@@ -384,7 +385,7 @@ class MainActivity : Activity() {
         userInput = findViewById(R.id.userInput)
         passInput = findViewById(R.id.passInput)
         saveButton = findViewById(R.id.saveButton)
-        testButton = findViewById(R.id.testButton)
+        connectButton = findViewById(R.id.connectButton)
         enterButton = findViewById(R.id.enterButton)
         backButton = findViewById(R.id.backButton)
         addButton = findViewById(R.id.addButton)
@@ -623,7 +624,7 @@ class MainActivity : Activity() {
             showHub(showForm = false)
         }
         saveButton.setOnClickListener { saveFromForm(prefs) }
-        testButton.setOnClickListener { testFromForm() }
+        connectButton.setOnClickListener { connectCheck() }
         enterButton.setOnClickListener { enterFromForm() }
         showHub(showForm = servers.isEmpty())
 
@@ -920,20 +921,22 @@ class MainActivity : Activity() {
         showHub(showForm = false)
     }
 
-    // Test = reachability ONLY: no save, no open. Any HTTP
-    // response (even 404/401) means the server is alive; only
-    // an exception/timeout means it is not. It is NOT a
-    // Termux/terminal command: it asks the server itself over
-    // HTTP and reports the answer — no shell runs anywhere.
-    // v0.5.1B: the result now carries the HTTP status and is
-    // also toasted, so it cannot hide below the fold again.
-    private fun testFromForm() {
+    // Connect = reachability ONLY (v0.5.1B amendment: Connect
+    // REPLACES Test — Aqil's order). It never opens the
+    // server and never saves: it probes, and shows GREEN only
+    // for a real connection (any HTTP response, even 404/401,
+    // means the server is alive; an exception/timeout means
+    // it is not). It is NOT a Termux/terminal command: it
+    // asks the server itself over HTTP — no shell runs
+    // anywhere. The result carries the HTTP status and is
+    // also toasted, so it cannot hide below the fold.
+    private fun connectCheck() {
         if (serverInput.text.toString().isBlank()) {
             setFormMessage("Server address is required.", false)
             return
         }
         val url = readForm().url
-        setFormMessage("Testing…", true)
+        setFormMessage("Connecting…", true)
         Thread {
             var code: Int? = null
             try {
