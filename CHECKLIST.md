@@ -8,8 +8,11 @@
 ## أ. قبل الدفع (تدقيق الكود)
 
 1. الصندوق والكيبورد: `windowSoftInputMode="adjustResize"` موجود
-   بالـ Manifest، ولا يوجد `LAYOUT_*` ولا `setDecorFitsSystemWindows`
-   كاستدعاء بالكود (تعليقات فقط مسموحة).
+   بالـ Manifest، ولا يوجد `LAYOUT_*` بالكود. قاعدة decorFits
+   (من 0.5.0B): `setDecorFitsSystemWindows(false)` مسموح فقط
+   إذا كان مستمع IME اليدوي موجوداً (bottomMargin =
+   ارتفاع الكيبورد على GeckoView) — بدونه، الـ decor يبقى
+   true ويعتمد الصندوق على adjustResize.
 2. ملء الشاشة: `SHORT_EDGES` موجود، وأعلام الإخفاء
    `IMMERSIVE_STICKY + HIDE_NAVIGATION + FULLSCREEN` موجودة.
 3. سكربت الشريط: `viewport-cover.js` موجود بالإضافة، ومعرّف
@@ -21,7 +24,10 @@
 6. الاسم والأيقونة: `app_name` صحيح، و`ic_launcher` موجود
    لكل الكثافات (mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi).
 7. النسخة: `versionCode` زاد واحد عن النسخة اللي قبلها،
-   و`versionName` مطابق لرقم النسخة المعلن.
+   و`versionName` مطابق لرقم النسخة المعلن. قاعدة الترقيم
+   (من 0.5.0B، أمر عقيل): الإصلاح الداخلي يأخذ نسخة فرعية
+   بحرف (0.5.0B) ولا يأخذ رقم minor جديد إلا إذا كان فيه
+   شي جديد فعلاً؛ الـ minor التالي (0.5.1) للميزات الجديدة.
 8. الأسرار: لا keystore ولا كلمات سر بالـ diff (مراجعة
    `git status` و`git diff` قبل الـ push).
 

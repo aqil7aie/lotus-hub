@@ -106,6 +106,15 @@ import org.json.JSONObject
  * decor call broke the composer again (keyboard covered it),
  * so 0.5.0 returns to 0.4.7's geometry. Aqil tests strip AND
  * composer together on 0.5.0.
+ * v0.5.0B (sub-version, Aqil's rule: internal fixes do NOT take
+ * a new minor number until stable): 0.5.0 proved decorFits was
+ * the strip-killer (strip back without it, composer fixed
+ * without it). So decorFits(false) is BACK, and the composer is
+ * decoupled from it — a WindowInsets listener sets the
+ * GeckoView's bottom margin to the keyboard height, shrinking
+ * the view so Gecko resizes its viewport and the composer
+ * rises. Strip and composer must now both pass together, or
+ * the pair is still open.
  * TODO (next phases, in order):
  *  1. Hub grid (0.5.1, Aqil's pick): saved-server cards, one tap
  *     to open; add-server form = server + optional user/password
@@ -292,15 +301,20 @@ class MainActivity : Activity() {
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             window.attributes = attrs
         }
-        // v0.5.0: decorFits REVERTED — v0.4.9's
-        // setDecorFitsSystemWindows(false) broke the composer again
-        // (keyboard covered it, page did not resize; Aqil's 0.4.9
-        // screenshot proved it). This was the committed first
-        // revert if the box broke. Back to v0.4.7's geometry:
-        // SHORT_EDGES + immersive hide flags + the fresh-extension
-        // viewport script. If the strip returns, decorFits was the
-        // strip-killer and the next route is manual IME-inset
-        // handling, not re-adding this call.
+        // v0.5.0B: decorFits RESTORED, composer decoupled from it.
+        // 0.5.0 proved the trade-off both ways: decorFits(false)
+        // (0.4.9) killed the strip but broke the composer, and
+        // reverting it (0.5.0) fixed the composer but brought the
+        // strip back — so decorFits WAS the strip-killer, and the
+        // composer must no longer depend on it. The composer is
+        // now handled by hand: the IME listener below shrinks
+        // the GeckoView by the keyboard height (see
+        // applyImeMargin), which resizes Gecko's viewport and
+        // lifts the composer above the keyboard. Strip and
+        // composer no longer fight over one flag. API 30+ only.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
         enableImmersive()
 
         geckoView = findViewById(R.id.geckoview)
@@ -330,6 +344,33 @@ class MainActivity : Activity() {
         // before the viewport fix lands, or during load) showed as a
         // white band. Black is the only acceptable fallback.
         geckoView.setBackgroundColor(android.graphics.Color.BLACK)
+
+        // v0.5.0B: manual IME handling (the composer's second half).
+        // With decorFits(false) the window no longer shrinks when
+        // the keyboard opens, so adjustResize cannot lift the
+        // composer — that was the whole 0.4.9 breakage. Instead,
+        // every window-inset change sets the GeckoView's bottom
+        // margin to the keyboard height: the view itself shrinks,
+        // Gecko resizes its viewport to the new view size, and
+        // the page's bottom-anchored composer rises above the
+        // keyboard. Keyboard closed -> inset 0 -> margin 0, full
+        // height again. Insets are NOT consumed, so Gecko still
+        // receives them through its own channels. Platform API,
+        // API 30+ only; older phones keep the previous behaviour.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            geckoView.setOnApplyWindowInsetsListener { _, insets ->
+                val imeBottom = insets.getInsets(
+                    android.view.WindowInsets.Type.ime()
+                ).bottom
+                val params = geckoView.layoutParams
+                    as android.widget.LinearLayout.LayoutParams
+                if (params.bottomMargin != imeBottom) {
+                    params.bottomMargin = imeBottom
+                    geckoView.layoutParams = params
+                }
+                insets
+            }
+        }
 
         // v0.4.4 select bridge: install the bundled content-script
         // extension. If it fails, the PromptDelegate fallback below stays
