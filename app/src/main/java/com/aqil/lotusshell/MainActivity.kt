@@ -120,7 +120,7 @@ import org.json.JSONObject
  * rises. Strip and composer must now both pass together, or
  * the pair is still open.
  * v0.5.1B (Hub fixes, from Aqil's 0.5.1 verdict): long-press
- * offers Edit + Delete (edit replaces in place); legacy
+ * offers Edit + Delete + Cancel (edit replaces in place); legacy
  * migration runs ONCE so a deleted card never resurrects;
  * the form is always clean (no stale typing, no "saved by
  * itself"); the save button is labeled Save; Connect
@@ -806,8 +806,10 @@ class MainActivity : Activity() {
                 card.addView(addr)
             }
             card.setOnClickListener { openServer(server) }
-            // v0.5.1B: long-press offers Edit AND Delete — 0.5.1
-            // only deleted, so a typo meant delete + retype all.
+            // v0.5.1B: long-press offers Edit AND Delete AND
+            // Cancel — 0.5.1 only deleted, so a typo meant
+            // delete + retype all. Cancel sits beside them
+            // (Aqil's order 2026-10-26 16:52).
             card.setOnLongClickListener {
                 val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 AlertDialog.Builder(this)
@@ -840,6 +842,9 @@ class MainActivity : Activity() {
                                 }
                                 .show()
                         }
+                    }
+                    .setNegativeButton("Cancel") { dlg, _ ->
+                        dlg.dismiss()
                     }
                     .show()
                 true
