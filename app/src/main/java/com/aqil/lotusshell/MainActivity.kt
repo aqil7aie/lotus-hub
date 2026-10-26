@@ -137,6 +137,20 @@ import org.json.JSONObject
  * Manifest now sets usesCleartextTraffic=true (this app
  * exists for local http servers), and a failed probe
  * reports its real cause instead of "no response".
+ * v0.5.2 (the complete version, Aqil's order 2026-10-26
+ * 17:58: a clean number, no B/C suffix — the hint is a
+ * NEW feature, so it takes a new minor): the parked
+ * coach hint above the first server card. Small English
+ * writing: long-press for options, single tap to enter.
+ * Its dismissal conditions are HIDDEN (no counters, no
+ * explanation — not a session popup like HTML games):
+ * one long-press fulfills the first condition, one
+ * tap-and-enter fulfills the second, and only then does
+ * the hint vanish FOREVER. It returns only when app
+ * data is wiped (fresh prefs), because both conditions
+ * live in SharedPreferences. Grid mode only: no hint
+ * over the empty-state form, and none while a server
+ * is open.
  * v0.5.1 (Hub, Aqil's pick): black home grid of saved-server
  * cards (name-labeled, one tap opens, long-press deletes) +
  * add-server form (name, server, optional user/password;
@@ -160,6 +174,7 @@ class MainActivity : Activity() {
     private lateinit var geckoView: GeckoView
     private lateinit var session: GeckoSession
     private lateinit var hubView: LinearLayout
+    private lateinit var hubHint: TextView
     private lateinit var hubGridScroll: ScrollView
     private lateinit var hubGridList: LinearLayout
     private lateinit var hubFormScroll: ScrollView
@@ -386,6 +401,7 @@ class MainActivity : Activity() {
 
         geckoView = findViewById(R.id.geckoview)
         hubView = findViewById(R.id.hubView)
+        hubHint = findViewById(R.id.hubHint)
         hubGridScroll = findViewById(R.id.hubGridScroll)
         hubGridList = findViewById(R.id.hubGridList)
         hubFormScroll = findViewById(R.id.hubFormScroll)
@@ -732,11 +748,34 @@ class MainActivity : Activity() {
         editingIndex = index
     }
 
+    // v0.5.2 coach hint: two HIDDEN conditions, both in
+    // prefs (so only wiping app data brings the hint back).
+    // The user never sees counters or explanations — the
+    // quiet disappearance after both gestures is the
+    // teaching. Long-press sets the first, entering a
+    // server sets the second; the hint shows only while
+    // at least one is still unmet.
+    private fun hintDone(prefs: android.content.SharedPreferences): Boolean {
+        return prefs.getBoolean(KEY_HINT_LONG, false) &&
+            prefs.getBoolean(KEY_HINT_ENTER, false)
+    }
+
+    private fun refreshHint() {
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        hubHint.visibility =
+            if (!formShown && servers.isNotEmpty() && !hintDone(prefs)) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+    }
+
     private fun showHub(showForm: Boolean) {
         formShown = showForm
         inServerView = false
         geckoView.visibility = View.GONE
         hubView.visibility = View.VISIBLE
+        refreshHint()
         if (showForm) {
             // New-server form only: an edit fills the fields
             // right after this via showFormForEdit.
@@ -823,6 +862,12 @@ class MainActivity : Activity() {
             // (Aqil's order 2026-10-26 16:52).
             card.setOnLongClickListener {
                 val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                // v0.5.2: the press itself fulfills the hint's
+                // FIRST hidden condition — even if the dialog
+                // ends in Cancel. Re-evaluate the hint at once:
+                // if entering already happened, it vanishes now.
+                prefs.edit().putBoolean(KEY_HINT_LONG, true).apply()
+                refreshHint()
                 AlertDialog.Builder(this)
                     .setTitle(displayName(server))
                     .setItems(arrayOf("Edit", "Delete")) { _, which ->
@@ -873,12 +918,19 @@ class MainActivity : Activity() {
                 )
             )
         }
+        refreshHint()
     }
 
     private fun openServer(server: HubServer) {
         val url = withUserInfo(normalize(server.url), server.user, server.pass)
+        // v0.5.2: entering a server fulfills the hint's
+        // SECOND hidden condition — from a card tap and
+        // from Enter alike, since both demonstrate entering.
         getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY_URL, normalize(server.url)).apply()
+            .edit()
+            .putString(KEY_URL, normalize(server.url))
+            .putBoolean(KEY_HINT_ENTER, true)
+            .apply()
         inServerView = true
         hubView.visibility = View.GONE
         geckoView.visibility = View.VISIBLE
@@ -1051,6 +1103,8 @@ class MainActivity : Activity() {
         private const val KEY_URL = "server_url"
         private const val KEY_SERVERS = "hub_servers_v1"
         private const val KEY_MIGRATED = "hub_migrated_v1"
+        private const val KEY_HINT_LONG = "hub_hint_longpress_v1"
+        private const val KEY_HINT_ENTER = "hub_hint_enter_v1"
         private const val REQ_FILE = 1001
     }
 }
