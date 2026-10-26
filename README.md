@@ -43,6 +43,8 @@ file — nothing is faked there).
 
 - Native Android (Kotlin) only: no Flutter binding for GeckoView exists,
   so this cannot be a Flutter app the way Luna/ForkSilly are.
+- arm64-v8a only: GeckoView ships ~170MB of native libs per ABI, so a
+  universal APK measured 507MB; arm64-only (Aqil's phone) is ~180MB.
 - Only direct dependency is GeckoView itself (which pulls AndroidX
   transitives — that is what the `android.useAndroidX=true` flag is for).
   No other third-party libraries are added by us.

@@ -13,6 +13,12 @@ android {
         targetSdk 35
         versionCode 1
         versionName "0.1.0"
+        // arm64-v8a only: Aqil's phone is arm64, and GeckoView ships
+        // ~170MB of native libs PER ABI — a universal APK was 507MB.
+        // arm64-only lands near ~180MB. Other ABIs can return later.
+        ndk {
+            abiFilters "arm64-v8a"
+        }
     }
 
     buildTypes {
