@@ -113,26 +113,16 @@ class MainActivity : Activity() {
                 prompt: ChoicePrompt
             ): GeckoResult<PromptResponse>? {
                 val result = GeckoResult<PromptResponse>()
-                // Flatten optgroups: group headers carry children and are
-                // not selectable themselves.
-                val flat = mutableListOf<ChoicePrompt.Choice>()
-                fun addAll(list: Array<ChoicePrompt.Choice>) {
-                    for (choice in list) {
-                        val children = choice.children
-                        if (children != null && children.isNotEmpty()) {
-                            addAll(children)
-                        } else {
-                            flat.add(choice)
-                        }
-                    }
-                }
-                addAll(prompt.choices)
-                val labels = flat.map { it.label }.toTypedArray()
-                val checked = flat.indexOfFirst { it.selected }
+                // GeckoView 158's Choice has no children/optgroup member,
+                // so the choices are used as delivered. ST's settings
+                // selects are flat lists, which is all this needs.
+                val choices = prompt.choices
+                val labels = choices.map { it.label }.toTypedArray()
+                val checked = choices.indexOfFirst { it.selected }
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(prompt.title)
                     .setSingleChoiceItems(labels, checked) { dialog, which ->
-                        result.complete(prompt.confirm(arrayOf(flat[which])))
+                        result.complete(prompt.confirm(arrayOf(choices[which])))
                         dialog.dismiss()
                     }
                     .setNegativeButton("إلغاء") { dialog, _ ->
