@@ -3,13 +3,17 @@ package com.aqil.lotusshell
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.view.inputmethod.EditorInfo
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
@@ -115,11 +119,19 @@ import org.json.JSONObject
  * the view so Gecko resizes its viewport and the composer
  * rises. Strip and composer must now both pass together, or
  * the pair is still open.
+ * v0.5.1 (Hub, Aqil's pick): black home grid of saved-server
+ * cards (name-labeled, one tap opens, long-press deletes) +
+ * add-server form (name, server, optional user/password;
+ * Connect saves even if offline and never navigates, Test
+ * probes reachability only, Enter opens without saving; form
+ * has Back to the grid; + top-right reopens the form) +
+ * file upload via PromptDelegate.onFilePrompt (system chooser).
+ * Hub UI is English per Aqil's 0.5.1 order; the older native
+ * dialogs stay Arabic for now.
  * TODO (next phases, in order):
- *  1. Hub grid (0.5.1, Aqil's pick): saved-server cards, one tap
- *     to open; add-server form = server + optional user/password
- *     + save-server option below, OK saves and opens.
- *  2. Full Arabic strings in strings.xml.
+ *  1. (done in 0.5.1) Hub grid + add-server form + file upload.
+ *  2. Full Arabic strings in strings.xml (superseded for the
+ *     Hub itself, which Aqil ordered in English).
  *  3. Keep-alive: foreground service + content-script visibility handling.
  *  4. Reply notifications: listen for the ST MESSAGE_RECEIVED event.
  *  5. Downloads routed to the Downloads folder.
@@ -129,10 +141,43 @@ import org.json.JSONObject
 class MainActivity : Activity() {
     private lateinit var geckoView: GeckoView
     private lateinit var session: GeckoSession
-    private lateinit var urlInput: EditText
-    private lateinit var addressRow: LinearLayout
-    private lateinit var statusView: TextView
+    private lateinit var hubView: LinearLayout
+    private lateinit var hubGridScroll: ScrollView
+    private lateinit var hubGridList: LinearLayout
+    private lateinit var hubFormScroll: ScrollView
+    private lateinit var nameInput: EditText
+    private lateinit var serverInput: EditText
+    private lateinit var userInput: EditText
+    private lateinit var passInput: EditText
+    private lateinit var connectButton: Button
+    private lateinit var testButton: Button
+    private lateinit var enterButton: Button
+    private lateinit var backButton: Button
+    private lateinit var addButton: Button
+    private lateinit var formMessage: TextView
     private var sessionCanGoBack = false
+    private var inServerView = false
+    private var formShown = false
+
+    // v0.5.1 Hub: saved servers, one per card. Stored as a JSON
+    // array in prefs (KEY_SERVERS); user/pass are optional and live
+    // in app-private prefs only. Legacy single address (KEY_URL)
+    // migrates into one card on first Hub load, so the saved
+    // address survives the 0.5.1 update.
+    private data class HubServer(
+        val name: String,
+        val url: String,
+        val user: String,
+        val pass: String
+    )
+
+    private val servers = mutableListOf<HubServer>()
+
+    // v0.5.1 file upload: the pending FilePrompt while the system
+    // chooser is open (same no-built-in-UI family as selects:
+    // GeckoView draws no file picker itself).
+    private var filePromptResult: GeckoResult<PromptResponse>? = null
+    private var filePrompt: PromptDelegate.FilePrompt? = null
 
     // v0.4.4 select bridge: the content script reads a tapped select's
     // real options from the live DOM (text, value, selected, disabled,
@@ -318,11 +363,22 @@ class MainActivity : Activity() {
         enableImmersive()
 
         geckoView = findViewById(R.id.geckoview)
-        urlInput = findViewById(R.id.serverUrl)
-        addressRow = findViewById(R.id.addressRow)
-        statusView = findViewById(R.id.statusView)
-        val goButton: Button = findViewById(R.id.goButton)
+        hubView = findViewById(R.id.hubView)
+        hubGridScroll = findViewById(R.id.hubGridScroll)
+        hubGridList = findViewById(R.id.hubGridList)
+        hubFormScroll = findViewById(R.id.hubFormScroll)
+        nameInput = findViewById(R.id.nameInput)
+        serverInput = findViewById(R.id.serverInput)
+        userInput = findViewById(R.id.userInput)
+        passInput = findViewById(R.id.passInput)
+        connectButton = findViewById(R.id.connectButton)
+        testButton = findViewById(R.id.testButton)
+        enterButton = findViewById(R.id.enterButton)
+        backButton = findViewById(R.id.backButton)
+        addButton = findViewById(R.id.addButton)
+        formMessage = findViewById(R.id.formMessage)
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        loadServers(prefs)
 
         // Smoothness levers (see KDoc): input auto-zoom off, automatic
         // font-size adjustment off; mobile viewport + mobile UA locked in.
@@ -363,7 +419,7 @@ class MainActivity : Activity() {
                     android.view.WindowInsets.Type.ime()
                 ).bottom
                 val params = geckoView.layoutParams
-                    as android.widget.LinearLayout.LayoutParams
+                    as ViewGroup.MarginLayoutParams
                 if (params.bottomMargin != imeBottom) {
                     params.bottomMargin = imeBottom
                     geckoView.layoutParams = params
@@ -405,9 +461,17 @@ class MainActivity : Activity() {
                 uri: String?,
                 error: WebRequestError
             ): GeckoResult<String>? {
-                statusView.text = "تعذر فتح $uri — تأكد أن السيرفر شغال والعنوان صحيح."
-                statusView.visibility = View.VISIBLE
-                showAddressRow()
+                // v0.5.1: no address row anymore — a failed load
+                // returns to the Hub so the server can be edited,
+                // tested, or re-entered from its card.
+                if (inServerView) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Failed to load — check the server is running.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    showHub(showForm = false)
+                }
                 return null
             }
         }
@@ -488,53 +552,326 @@ class MainActivity : Activity() {
                 nativeSelectDialog = dialog
                 return result
             }
+
+            // v0.5.1 file upload: GeckoView draws no file picker
+            // itself, so <input type=file> (ST's attach button)
+            // silently did nothing — the same family as the select
+            // defect. Open the system chooser; the chosen URIs go
+            // back through prompt.confirm. Multiple allowed so one
+            // picker covers single and multiple inputs; camera
+            // capture inputs fall back to the chooser too.
+            override fun onFilePrompt(
+                session: GeckoSession,
+                prompt: PromptDelegate.FilePrompt
+            ): GeckoResult<PromptResponse>? {
+                val result = GeckoResult<PromptResponse>()
+                filePromptResult = result
+                filePrompt = prompt
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = prompt.mimeTypes?.firstOrNull()
+                        ?.takeIf { it.isNotBlank() } ?: "*/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                }
+                @Suppress("DEPRECATION")
+                startActivityForResult(
+                    Intent.createChooser(intent, "Choose file"),
+                    REQ_FILE
+                )
+                return result
+            }
         }
 
         session.progressDelegate = object : ProgressDelegate {
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 if (success) {
-                    hideAddressRow()
-                    statusView.visibility = View.GONE
                     // v0.4.9: no native JS injection here — GeckoSession
                     // exposes no evaluateJavascript (verified against
                     // the 158 AAR: loadUri only). The viewport-cover
                     // fix rides on the fresh extension id's
                     // document_start content script instead.
-                } else {
-                    showAddressRow()
-                    if (statusView.visibility == View.GONE) {
-                        statusView.text = "تعذر تحميل الصفحة — تأكد أن السيرفر شغال والعنوان صحيح."
-                        statusView.visibility = View.VISIBLE
-                    }
+                } else if (inServerView) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Failed to load — check the server is running.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    showHub(showForm = false)
                 }
             }
         }
 
-        // Saved address is prefilled only — never auto-loaded. The address
-        // row must stay visible until the user enters an address and it
-        // loads successfully (hide only on enter + working server).
-        val saved = prefs.getString(KEY_URL, null)
-        if (!saved.isNullOrBlank()) {
-            urlInput.setText(saved)
-        }
+        // v0.5.1 Hub wiring. Empty home = the add form itself; once
+        // a server is saved the home is the card grid with + top-right.
+        addButton.setOnClickListener { showHub(showForm = true) }
+        backButton.setOnClickListener { showHub(showForm = false) }
+        connectButton.setOnClickListener { saveFromForm(prefs) }
+        testButton.setOnClickListener { testFromForm() }
+        enterButton.setOnClickListener { enterFromForm() }
+        showHub(showForm = servers.isEmpty())
 
-        goButton.setOnClickListener { loadFromInput(prefs) }
-        urlInput.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_GO) {
-                loadFromInput(prefs)
-                true
-            } else {
-                false
+    }
+
+    // ---- v0.5.1 Hub ----
+
+    private fun loadServers(prefs: android.content.SharedPreferences) {
+        servers.clear()
+        val raw = prefs.getString(KEY_SERVERS, null)
+        if (!raw.isNullOrBlank()) {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                servers.add(
+                    HubServer(
+                        o.optString("name"),
+                        o.optString("url"),
+                        o.optString("user"),
+                        o.optString("pass")
+                    )
+                )
+            }
+        }
+        // Legacy migration: the single pre-0.5.1 saved address
+        // becomes one card (empty name -> the address is its label).
+        if (servers.isEmpty()) {
+            val legacy = prefs.getString(KEY_URL, null)
+            if (!legacy.isNullOrBlank()) {
+                servers.add(HubServer("", legacy, "", ""))
+                persistServers(prefs)
             }
         }
     }
 
-    private fun loadFromInput(prefs: android.content.SharedPreferences) {
-        val raw = urlInput.text.toString().trim()
-        if (raw.isBlank()) return
-        val url = normalize(raw)
-        prefs.edit().putString(KEY_URL, url).apply()
+    private fun persistServers(prefs: android.content.SharedPreferences) {
+        val arr = JSONArray()
+        for (s in servers) {
+            val o = JSONObject()
+            o.put("name", s.name)
+            o.put("url", s.url)
+            o.put("user", s.user)
+            o.put("pass", s.pass)
+            arr.put(o)
+        }
+        prefs.edit().putString(KEY_SERVERS, arr.toString()).apply()
+    }
+
+    private fun displayName(server: HubServer): String {
+        return server.name.takeIf { it.isNotBlank() } ?: server.url
+    }
+
+    private fun iconFor(server: HubServer): String {
+        val hay = (server.name + " " + server.url).lowercase()
+        return when {
+            "neconyan" in hay -> "🦊"
+            "bunny" in hay -> "🐰"
+            "tavern" in hay -> "💬"
+            "opencode" in hay -> "</>"
+            else -> displayName(server).firstOrNull()?.uppercase() ?: "?"
+        }
+    }
+
+    private fun showHub(showForm: Boolean) {
+        formShown = showForm
+        inServerView = false
+        geckoView.visibility = View.GONE
+        hubView.visibility = View.VISIBLE
+        if (showForm) {
+            hubGridScroll.visibility = View.GONE
+            hubFormScroll.visibility = View.VISIBLE
+            addButton.visibility = View.GONE
+            // Back only exists when there is a grid to go back to;
+            // an empty home IS the form, so there is nowhere back.
+            backButton.visibility =
+                if (servers.isNotEmpty()) View.VISIBLE else View.GONE
+        } else {
+            hubFormScroll.visibility = View.GONE
+            hubGridScroll.visibility = View.VISIBLE
+            addButton.visibility = View.VISIBLE
+            refreshHub()
+        }
+    }
+
+    private fun refreshHub() {
+        hubGridList.removeAllViews()
+        var row: LinearLayout? = null
+        for ((index, server) in servers.withIndex()) {
+            if (index % 2 == 0) {
+                row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                }
+                hubGridList.addView(row)
+            }
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(32, 32, 32, 32)
+                val bg = android.graphics.drawable.GradientDrawable()
+                bg.setColor(android.graphics.Color.parseColor("#222222"))
+                bg.setStroke(2, android.graphics.Color.parseColor("#FF8C42"))
+                bg.cornerRadius = 32f
+                background = bg
+                val lp = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+                lp.setMargins(16, 16, 16, 16)
+                layoutParams = lp
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+            }
+            val icon = TextView(this).apply {
+                text = iconFor(server)
+                textSize = 40f
+                setTextColor(android.graphics.Color.parseColor("#FF8C42"))
+                gravity = android.view.Gravity.CENTER
+            }
+            val name = TextView(this).apply {
+                text = displayName(server)
+                textSize = 16f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(android.graphics.Color.WHITE)
+                gravity = android.view.Gravity.CENTER
+            }
+            val addr = TextView(this).apply {
+                text = server.url
+                textSize = 12f
+                setTextColor(android.graphics.Color.parseColor("#AAAAAA"))
+                gravity = android.view.Gravity.CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            card.addView(icon)
+            card.addView(name)
+            card.addView(addr)
+            card.setOnClickListener { openServer(server) }
+            // Long-press deletes: a wrong entry must never trap
+            // the user with no way to remove it.
+            card.setOnLongClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle("Delete server?")
+                    .setMessage(displayName(server))
+                    .setPositiveButton("Delete") { dlg, _ ->
+                        servers.remove(server)
+                        persistServers(
+                            getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        )
+                        refreshHub()
+                        dlg.dismiss()
+                    }
+                    .setNegativeButton("Cancel") { dlg, _ -> dlg.dismiss() }
+                    .show()
+                true
+            }
+            row?.addView(card)
+        }
+        // Odd card out: pad the last row so cards keep half width.
+        if (servers.size % 2 == 1) {
+            row?.addView(
+                View(this),
+                LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+            )
+        }
+    }
+
+    private fun openServer(server: HubServer) {
+        val url = withUserInfo(normalize(server.url), server.user, server.pass)
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_URL, normalize(server.url)).apply()
+        inServerView = true
+        hubView.visibility = View.GONE
+        geckoView.visibility = View.VISIBLE
         session.loadUri(url)
+    }
+
+    private fun withUserInfo(url: String, user: String, pass: String): String {
+        if (user.isBlank()) return url
+        val schemeEnd = url.indexOf("://")
+        if (schemeEnd < 0) return url
+        val scheme = url.substring(0, schemeEnd + 3)
+        val rest = url.substring(schemeEnd + 3)
+        val info = if (pass.isBlank()) user else "$user:$pass"
+        return "$scheme$info@$rest"
+    }
+
+    private fun readForm(): HubServer {
+        return HubServer(
+            nameInput.text.toString().trim(),
+            normalize(serverInput.text.toString().trim()),
+            userInput.text.toString().trim(),
+            passInput.text.toString().trim()
+        )
+    }
+
+    private fun setFormMessage(text: String, ok: Boolean) {
+        formMessage.text = text
+        formMessage.setTextColor(
+            if (ok) android.graphics.Color.parseColor("#4CAF50")
+            else android.graphics.Color.parseColor("#F44336")
+        )
+    }
+
+    // Connect = SAVE. Deliberately NOT gated on reachability
+    // (Aqil's order): a failed connection must never cost the
+    // typed details — save first, test separately. Saving never
+    // navigates: it reports Saved and stays on the grid.
+    private fun saveFromForm(prefs: android.content.SharedPreferences) {
+        if (serverInput.text.toString().isBlank()) {
+            setFormMessage("Server address is required.", false)
+            return
+        }
+        val server = readForm()
+        val existing = servers.indexOfFirst { it.url == server.url }
+        if (existing >= 0) servers[existing] = server else servers.add(server)
+        persistServers(prefs)
+        setFormMessage("Saved.", true)
+        showHub(showForm = false)
+    }
+
+    // Test = reachability ONLY: no save, no open. Any HTTP
+    // response (even 404/401) means the server is alive; only
+    // an exception/timeout means it is not.
+    private fun testFromForm() {
+        if (serverInput.text.toString().isBlank()) {
+            setFormMessage("Server address is required.", false)
+            return
+        }
+        val url = readForm().url
+        setFormMessage("Testing…", true)
+        Thread {
+            val ok = try {
+                val conn = java.net.URL(url).openConnection()
+                    as java.net.HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                conn.requestMethod = "GET"
+                conn.instanceFollowRedirects = false
+                conn.connect()
+                conn.responseCode in 100..599
+            } catch (e: Exception) {
+                false
+            }
+            runOnUiThread {
+                if (ok) setFormMessage("Connection successful.", true)
+                else setFormMessage("Connection failed.", false)
+            }
+        }.start()
+    }
+
+    // Enter = OPEN ONLY: the filled-in server loads without
+    // being saved. Saving is Connect's job, not Enter's.
+    private fun enterFromForm() {
+        if (serverInput.text.toString().isBlank()) {
+            setFormMessage("Server address is required.", false)
+            return
+        }
+        openServer(readForm())
     }
 
     private fun normalize(raw: String): String {
@@ -545,20 +882,43 @@ class MainActivity : Activity() {
         return url
     }
 
-    private fun hideAddressRow() {
-        addressRow.visibility = View.GONE
-    }
-
-    private fun showAddressRow() {
-        addressRow.visibility = View.VISIBLE
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_FILE) return
+        val result = filePromptResult
+        val prompt = filePrompt
+        filePromptResult = null
+        filePrompt = null
+        if (result == null || prompt == null) return
+        if (resultCode == RESULT_OK && data != null) {
+            val uris = mutableListOf<Uri>()
+            val clip = data.clipData
+            if (clip != null) {
+                for (i in 0 until clip.itemCount) {
+                    uris.add(clip.getItemAt(i).uri)
+                }
+            } else if (data.data != null) {
+                uris.add(data.data!!)
+            }
+            if (uris.isNotEmpty()) {
+                result.complete(prompt.confirm(applicationContext, uris.toTypedArray()))
+                return
+            }
+        }
+        result.complete(prompt.dismiss())
     }
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (sessionCanGoBack) {
-            session.goBack()
-        } else if (addressRow.visibility == View.GONE) {
-            showAddressRow()
+        if (inServerView) {
+            if (sessionCanGoBack) {
+                session.goBack()
+            } else {
+                showHub(showForm = false)
+            }
+        } else if (formShown && servers.isNotEmpty()) {
+            showHub(showForm = false)
         } else {
             super.onBackPressed()
         }
@@ -567,5 +927,7 @@ class MainActivity : Activity() {
     companion object {
         private const val PREFS = "lotus-shell-prefs"
         private const val KEY_URL = "server_url"
+        private const val KEY_SERVERS = "hub_servers_v1"
+        private const val REQ_FILE = 1001
     }
 }

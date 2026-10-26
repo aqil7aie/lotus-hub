@@ -11,8 +11,8 @@ android {
         applicationId "com.aqil.lotusshell"
         minSdk 26 // GeckoView 158 requires at least 26 (Android 8.0)
         targetSdk 35
-        versionCode 15
-        versionName "0.5.0B"
+        versionCode 16
+        versionName "0.5.1"
         // arm64-v8a only: Aqil's phone is arm64, and GeckoView ships
         // ~170MB of native libs PER ABI — a universal APK was 507MB.
         // arm64-only lands near ~180MB. Other ABIs can return later.

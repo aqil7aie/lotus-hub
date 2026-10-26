@@ -1,39 +1,157 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- v0.5.1 Hub layout: black home (grid + add form) overlaid by the
+     fullscreen GeckoView when a server is open. No top address bar:
+     the Hub IS the home. All Hub text is English (Aqil's 0.5.1 order). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:background="#000000">
+
     <LinearLayout
-        android:id="@+id/addressRow"
+        android:id="@+id/hubView"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="8dp">
-        <EditText
-            android:id="@+id/serverUrl"
-            android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Lotus Hub"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/addButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="+"
+                android:textSize="24sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/hubGridScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <LinearLayout
+                android:id="@+id/hubGridList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="8dp" />
+        </ScrollView>
+
+        <ScrollView
+            android:id="@+id/hubFormScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:hint="عنوان السيرفر (مثال: http://127.0.0.1:8000)"
-            android:inputType="textUri"
-            android:imeOptions="actionGo"
-            android:singleLine="true" />
-        <Button
-            android:id="@+id/goButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="اتصال" />
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Add Server"
+                    android:textColor="#FFFFFF"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/nameInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Name"
+                    android:inputType="text"
+                    android:singleLine="true"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#888888" />
+
+                <EditText
+                    android:id="@+id/serverInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Server (e.g. http://127.0.0.1:4433)"
+                    android:inputType="textUri"
+                    android:singleLine="true"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#888888" />
+
+                <EditText
+                    android:id="@+id/userInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Username (optional)"
+                    android:inputType="text"
+                    android:singleLine="true"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#888888" />
+
+                <EditText
+                    android:id="@+id/passInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Password (optional)"
+                    android:inputType="textPassword"
+                    android:singleLine="true"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#888888" />
+
+                <Button
+                    android:id="@+id/connectButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Connect" />
+
+                <Button
+                    android:id="@+id/testButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Test" />
+
+                <Button
+                    android:id="@+id/enterButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Enter" />
+
+                <Button
+                    android:id="@+id/backButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Back"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/formMessage"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="12dp"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp" />
+            </LinearLayout>
+        </ScrollView>
     </LinearLayout>
-    <TextView
-        android:id="@+id/statusView"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="12dp"
-        android:textSize="15sp"
-        android:visibility="gone" />
+
     <org.mozilla.geckoview.GeckoView
         android:id="@+id/geckoview"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
-</LinearLayout>
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+</FrameLayout>
