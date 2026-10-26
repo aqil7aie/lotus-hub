@@ -228,10 +228,12 @@ class MainActivity : Activity() {
             "select-bridge@lotus-shell"
         ).accept(
             { extension ->
-                session.webExtensionController.setMessageDelegate(
-                    extension, selectMessageDelegate, "lotus_shell"
-                )
-                extension.setMessageDelegate(selectMessageDelegate, "lotus_shell")
+                extension?.let { ext ->
+                    session.webExtensionController.setMessageDelegate(
+                        ext, selectMessageDelegate, "lotus_shell"
+                    )
+                    ext.setMessageDelegate(selectMessageDelegate, "lotus_shell")
+                }
             },
             { /* bridge unavailable: native fallback stays */ }
         )
