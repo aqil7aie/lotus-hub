@@ -28,7 +28,6 @@ android {
     // No kotlinOptions block: AGP 9's built-in Kotlin support derives the
     // JVM target from compileOptions above.
 }
-}
 
 dependencies {
     // Latest stable GeckoView, verified from Mozilla's maven metadata
