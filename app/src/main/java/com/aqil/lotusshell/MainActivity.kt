@@ -90,17 +90,26 @@ import org.json.JSONObject
  * extension keeps running and the new script never loads. The layout
  * file was audited and is clean (no fitsSystemWindows, no margins;
  * the GeckoView fills the window), so the strip lives inside
- * GeckoView. Three levers at once: (1) a NEW extension id, forcing
+ * GeckoView. Levers shipped: (1) a NEW extension id, forcing
  * a fresh install of the viewport script (the stale one stays but
  * is inert for selects — the DOM attach flag is shared, so only one
- * script ever attaches); (2) the same viewport patch injected
- * natively on every successful page load, so the fix no longer
- * depends on extension-update semantics at all; (3) true
- * edge-to-edge decor (setDecorFitsSystemWindows(false), API 30+) —
- * TauriTavern's enableEdgeToEdge call — so the decor itself stops
- * insetting content away from the cutout.
+ * script ever attaches); (2) true edge-to-edge decor
+ * (setDecorFitsSystemWindows(false), API 30+) — TauriTavern's
+ * enableEdgeToEdge call — so the decor itself stops insetting
+ * content away from the cutout. (A native viewport patch was
+ * planned as a third lever but dropped before release:
+ * GeckoSession exposes no JS-eval API, loadUri only.)
+ * v0.5.0 (Lotus Hub): visible rename only — app label Lotus Hub
+ * (package stays com.aqil.lotusshell, so the saved address
+ * survives the update) + first real launcher icon (orange lotus
+ * with hub nodes, Aqil's pick) + decorFits REVERTED: 0.4.9's
+ * decor call broke the composer again (keyboard covered it),
+ * so 0.5.0 returns to 0.4.7's geometry. Aqil tests strip AND
+ * composer together on 0.5.0.
  * TODO (next phases, in order):
- *  1. Multi-server list (SillyTavern + Neconyan + more, one tap to switch).
+ *  1. Hub grid (0.5.1, Aqil's pick): saved-server cards, one tap
+ *     to open; add-server form = server + optional user/password
+ *     + save-server option below, OK saves and opens.
  *  2. Full Arabic strings in strings.xml.
  *  3. Keep-alive: foreground service + content-script visibility handling.
  *  4. Reply notifications: listen for the ST MESSAGE_RECEIVED event.
@@ -283,14 +292,15 @@ class MainActivity : Activity() {
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             window.attributes = attrs
         }
-        // v0.4.9: true edge-to-edge decor (TauriTavern's
-        // enableEdgeToEdge). The hide flags alone leave the decor
-        // fitting system windows, which can still inset content away
-        // from the cutout; opting out lays the content under the bars
-        // and the cutout for real. API 30+ only.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
-        }
+        // v0.5.0: decorFits REVERTED — v0.4.9's
+        // setDecorFitsSystemWindows(false) broke the composer again
+        // (keyboard covered it, page did not resize; Aqil's 0.4.9
+        // screenshot proved it). This was the committed first
+        // revert if the box broke. Back to v0.4.7's geometry:
+        // SHORT_EDGES + immersive hide flags + the fresh-extension
+        // viewport script. If the strip returns, decorFits was the
+        // strip-killer and the next route is manual IME-inset
+        // handling, not re-adding this call.
         enableImmersive()
 
         geckoView = findViewById(R.id.geckoview)
