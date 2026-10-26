@@ -29,13 +29,19 @@ android {
     // JVM target from compileOptions above.
 }
 
-dependencies {
-    // GeckoView's tree pulls kotlin-stdlib 2.4.20, but AGP 9.1's bundled
-    // Kotlin compiler is 2.2.0 and cannot read metadata 2.4.0 — pin the
-    // stdlib to the compiler's own version.
-    constraints {
-        implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.10")
+configurations.all {
+    resolutionStrategy {
+        // GeckoView's tree pulls kotlin-stdlib 2.4.20, but AGP 9.1's
+        // bundled Kotlin compiler is 2.2.0 and cannot read metadata
+        // 2.4.0. A plain constraint did NOT downgrade it (Gradle picks
+        // the highest version) — force is the tool that actually does.
+        force "org.jetbrains.kotlin:kotlin-stdlib:2.2.10"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.2.10"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.10"
     }
+}
+
+dependencies {
     // Latest stable GeckoView, verified from Mozilla's maven metadata
     // (last updated 2026-10-21). Single artifact, no per-arch flavors.
     // Kotlin stdlib comes from AGP 9's built-in Kotlin support — no
