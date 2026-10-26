@@ -696,7 +696,9 @@ class MainActivity : Activity() {
     private fun iconFor(server: HubServer): String {
         val hay = (server.name + " " + server.url).lowercase()
         return when {
-            "neconyan" in hay -> "🦊"
+            // Neconyan is a CAT (neko/nyan), not a fox —
+            // its own splash screen shows a pixel cat.
+            "neconyan" in hay || "nyan" in hay -> "🐱"
             "bunny" in hay -> "🐰"
             "tavern" in hay -> "💬"
             "opencode" in hay -> "</>"
