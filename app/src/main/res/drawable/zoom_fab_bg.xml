@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v0.5.3 floating zoom button: a small dark pill with an
+     orange border (the Hub's accent), round for the 48dp
+     button, pill-shaped for the taller +/- panel. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#CC222222" />
+    <stroke android:width="2dp" android:color="#FF8C42" />
+    <corners android:radius="24dp" />
+</shape>

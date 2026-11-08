@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -29,6 +31,7 @@ import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebRequestError
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.abs
 
 /**
  * Lotus Shell v0 skeleton: a GeckoView shell that loads one self-hosted
@@ -154,6 +157,22 @@ import org.json.JSONObject
  * live in SharedPreferences. Grid mode only: no hint
  * over the empty-state form, and none while a server
  * is open.
+ * v0.5.3 (floating zoom, Aqil's 2026-11-08 request): a
+ * small draggable button over the server view; tapping
+ * it opens a +/- panel that scales the page. Zoom is a
+ * CSS zoom on documentElement, applied by a NEW content
+ * script (assets/zoom) through its own native port —
+ * the proven select bridge is untouched, its id stays,
+ * so no stale-extension risk for selects. GeckoView has
+ * no public page-zoom API: fontSizeFactor is text-only,
+ * displayDensityOverride has no runtime setter, and
+ * PanZoomController only handles gestures. CSS zoom is
+ * supported in Firefox 126+ (bug 390936); GeckoView 158
+ * is far newer. Factor 0.5-2.0 in 0.1 steps, persisted,
+ * and the button's spot is persisted as fractions so
+ * rotation cannot strand it. Server addresses and tiles
+ * are untouched in this version (Aqil's word: use Mari
+ * on localhost, just add the button).
  * v0.5.1 (Hub, Aqil's pick): black home grid of saved-server
  * cards (name-labeled, one tap opens, long-press deletes) +
  * add-server form (name, server, optional user/password;
@@ -198,6 +217,30 @@ class MainActivity : Activity() {
     // server. Saving with a valid index replaces that card in
     // place (even if its URL changed); otherwise it upserts by URL.
     private var editingIndex = -1
+
+    // v0.5.3 floating zoom: a small draggable button over the
+    // server view; tapping it opens a +/- panel that scales the
+    // page. Zoom is a CSS zoom on documentElement, applied by
+    // the zoom content script (assets/zoom) through its own
+    // native port — GeckoView exposes no public page-zoom API
+    // (fontSizeFactor is text-only; displayDensityOverride has
+    // no runtime setter; PanZoomController handles gestures
+    // only). CSS zoom is supported in Firefox 126+ (bug
+    // 390936), GeckoView 158 is far newer.
+    private lateinit var zoomFab: TextView
+    private lateinit var zoomPanel: LinearLayout
+    private lateinit var zoomPlus: Button
+    private lateinit var zoomMinus: Button
+    private lateinit var zoomLabel: TextView
+    private var zoomFactor = 1.0f
+    private var zoomPort: WebExtension.Port? = null
+    private var zoomPanelShown = false
+    private var dragSlopPx = 0
+    private var dragStartRawX = 0f
+    private var dragStartRawY = 0f
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var dragMoved = false
 
     // v0.5.1 Hub: saved servers, one per card. Stored as a JSON
     // array in prefs (KEY_SERVERS); user/pass are optional and live
@@ -265,6 +308,91 @@ class MainActivity : Activity() {
             sender: WebExtension.MessageSender
         ): GeckoResult<Any>? {
             return null
+        }
+    }
+
+    // v0.5.3 zoom port: the zoom script sends nothing back —
+    // zoom is one-way, native to page. On connect the app
+    // pushes the current factor at once, so a fresh page load
+    // lands at the right zoom; every +/- tap pushes again.
+    private val zoomPortDelegate = object : WebExtension.PortDelegate {
+        override fun onPortMessage(message: Any, port: WebExtension.Port) {
+            // Nothing expected from the zoom script.
+        }
+
+        override fun onDisconnect(port: WebExtension.Port) {
+            if (port == zoomPort) zoomPort = null
+        }
+    }
+
+    private val zoomMessageDelegate = object : WebExtension.MessageDelegate {
+        override fun onConnect(port: WebExtension.Port) {
+            zoomPort = port
+            port.setDelegate(zoomPortDelegate)
+            runOnUiThread { sendZoomFactor() }
+        }
+
+        override fun onMessage(
+            nativeApp: String,
+            message: Any,
+            sender: WebExtension.MessageSender
+        ): GeckoResult<Any>? {
+            return null
+        }
+    }
+
+    // v0.5.3 drag: a press that does not move is a tap (toggle
+    // the panel); a press that moves drags the button. The panel
+    // hides as soon as a drag starts, so it never floats detached
+    // from the button. The spot persists as fractions of the
+    // parent, so rotation cannot strand the button off-screen.
+    // Raw deltas are used (not view coordinates), so the math
+    // holds whatever the view's current translation is.
+    private val zoomDragListener = View.OnTouchListener { v, event ->
+        val parent = v.parent as? View ?: return@OnTouchListener false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                dragStartRawX = event.rawX
+                dragStartRawY = event.rawY
+                dragStartX = v.x
+                dragStartY = v.y
+                dragMoved = false
+                true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.rawX - dragStartRawX
+                val dy = event.rawY - dragStartRawY
+                if (!dragMoved && (abs(dx) > dragSlopPx || abs(dy) > dragSlopPx)) {
+                    dragMoved = true
+                    hideZoomPanel()
+                }
+                if (dragMoved) {
+                    val size = dp(ZOOM_FAB_DP)
+                    v.x = (dragStartX + dx).coerceIn(
+                        0f, (parent.width - size).toFloat().coerceAtLeast(0f)
+                    )
+                    v.y = (dragStartY + dy).coerceIn(
+                        0f, (parent.height - size).toFloat().coerceAtLeast(0f)
+                    )
+                }
+                true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (!dragMoved) {
+                    toggleZoomPanel()
+                } else {
+                    val pw = parent.width
+                    val ph = parent.height
+                    if (pw > 0 && ph > 0) {
+                        getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                            .putFloat(KEY_ZOOM_X, (v.x / pw).coerceIn(0f, 1f))
+                            .putFloat(KEY_ZOOM_Y, (v.y / ph).coerceIn(0f, 1f))
+                            .apply()
+                    }
+                }
+                true
+            }
+            else -> false
         }
     }
 
@@ -417,6 +545,12 @@ class MainActivity : Activity() {
         backButton = findViewById(R.id.backButton)
         addButton = findViewById(R.id.addButton)
         formMessage = findViewById(R.id.formMessage)
+        zoomFab = findViewById(R.id.zoomFab)
+        zoomPanel = findViewById(R.id.zoomPanel)
+        zoomPlus = findViewById(R.id.zoomPlus)
+        zoomMinus = findViewById(R.id.zoomMinus)
+        zoomLabel = findViewById(R.id.zoomLabel)
+        setupZoomFab()
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         loadServers(prefs)
 
@@ -490,6 +624,34 @@ class MainActivity : Activity() {
             },
             { /* bridge unavailable: native fallback stays */ }
         )
+
+        // v0.5.3 page zoom: a SEPARATE extension from the select
+        // bridge, so the proven bridge (and its id) is untouched
+        // — no stale-extension risk for selects. This is a fresh
+        // id, so it installs cleanly on first 0.5.3 launch.
+        runtime.webExtensionController.ensureBuiltIn(
+            "resource://android/assets/zoom/",
+            "lotus-shell-zoom@lotus-shell"
+        ).accept(
+            { extension ->
+                extension?.let { ext ->
+                    session.webExtensionController.setMessageDelegate(
+                        ext, zoomMessageDelegate, "lotus_zoom"
+                    )
+                    ext.setMessageDelegate(zoomMessageDelegate, "lotus_zoom")
+                }
+            },
+            { /* zoom unavailable: +/- still move the label, page stays 100% */ }
+        )
+
+        // v0.5.3: rotation changes the parent size, so the saved
+        // fractions must be re-applied — otherwise a button parked
+        // near an edge can end up off-screen. The root FrameLayout
+        // does not resize for the keyboard (decorFits false), so
+        // this fires on rotation, not on every keystroke.
+        (geckoView.parent as? View)?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (zoomFab.visibility == View.VISIBLE) placeZoomFab()
+        }
 
         session.navigationDelegate = object : NavigationDelegate {
             override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
@@ -767,6 +929,8 @@ class MainActivity : Activity() {
         inServerView = false
         geckoView.visibility = View.GONE
         hubView.visibility = View.VISIBLE
+        // v0.5.3: the zoom button lives only over a server.
+        hideZoomFab()
         if (showForm) {
             // New-server form only: an edit fills the fields
             // right after this via showFormForEdit.
@@ -950,6 +1114,8 @@ class MainActivity : Activity() {
         hubView.visibility = View.GONE
         geckoView.visibility = View.VISIBLE
         session.loadUri(url)
+        // v0.5.3: the zoom button appears with the server.
+        showZoomFab()
     }
 
     private fun withUserInfo(url: String, user: String, pass: String): String {
@@ -1071,6 +1237,103 @@ class MainActivity : Activity() {
         return url
     }
 
+    // ---- v0.5.3 floating zoom ----
+
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
+    }
+
+    // Restore the saved factor + label, wire the drag and the
+    // +/- buttons. The button itself is only shown by
+    // showZoomFab() when a server opens.
+    private fun setupZoomFab() {
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        zoomFactor = prefs.getFloat(KEY_ZOOM, 1.0f).coerceIn(ZOOM_MIN, ZOOM_MAX)
+        zoomLabel.text = "${(zoomFactor * 100).toInt()}%"
+        dragSlopPx = ViewConfiguration.get(this).scaledTouchSlop
+        zoomFab.setOnTouchListener(zoomDragListener)
+        zoomPlus.setOnClickListener { setZoomFactor(zoomFactor + ZOOM_STEP) }
+        zoomMinus.setOnClickListener { setZoomFactor(zoomFactor - ZOOM_STEP) }
+    }
+
+    // Put the button at its saved spot (fractions of the
+    // parent), or the default — right edge, just above middle,
+    // clear of the top strip and the bottom composer. Position
+    // is set BEFORE the button is shown, so it never flashes
+    // at the top-left corner.
+    private fun placeZoomFab() {
+        val parent = zoomFab.parent as? View ?: return
+        val pw = parent.width
+        val ph = parent.height
+        val size = dp(ZOOM_FAB_DP)
+        if (pw <= 0 || ph <= 0) return
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val fx = prefs.getFloat(KEY_ZOOM_X, -1f)
+        val fy = prefs.getFloat(KEY_ZOOM_Y, -1f)
+        if (fx >= 0f && fy >= 0f) {
+            zoomFab.x = (fx * pw).coerceIn(0f, (pw - size).toFloat().coerceAtLeast(0f))
+            zoomFab.y = (fy * ph).coerceIn(0f, (ph - size).toFloat().coerceAtLeast(0f))
+        } else {
+            zoomFab.x = (pw - size - dp(16)).toFloat()
+            zoomFab.y = ph * 0.42f
+        }
+    }
+
+    private fun showZoomFab() {
+        placeZoomFab()
+        zoomFab.visibility = View.VISIBLE
+    }
+
+    private fun hideZoomFab() {
+        zoomFab.visibility = View.GONE
+        hideZoomPanel()
+    }
+
+    private fun toggleZoomPanel() {
+        if (zoomPanelShown) hideZoomPanel() else showZoomPanel()
+    }
+
+    private fun showZoomPanel() {
+        val parent = zoomFab.parent as? View ?: return
+        val pw = parent.width
+        val ph = parent.height
+        // Panel size is fixed by the layout (56dp wide; two 48dp
+        // buttons + a label + padding ≈ 136dp tall). Above the
+        // button when there is room, below it when there is not.
+        val panelW = dp(ZOOM_PANEL_W_DP)
+        val panelH = dp(ZOOM_PANEL_H_DP)
+        var px = zoomFab.x
+        var py = zoomFab.y - panelH - dp(8)
+        if (py < 0) py = zoomFab.y + dp(ZOOM_FAB_DP) + dp(8)
+        px = px.coerceIn(0f, (pw - panelW).toFloat().coerceAtLeast(0f))
+        py = py.coerceIn(0f, (ph - panelH).toFloat().coerceAtLeast(0f))
+        zoomPanel.x = px
+        zoomPanel.y = py
+        zoomPanel.visibility = View.VISIBLE
+        zoomPanelShown = true
+    }
+
+    private fun hideZoomPanel() {
+        zoomPanel.visibility = View.GONE
+        zoomPanelShown = false
+    }
+
+    private fun setZoomFactor(newFactor: Float) {
+        zoomFactor = newFactor.coerceIn(ZOOM_MIN, ZOOM_MAX)
+        zoomLabel.text = "${(zoomFactor * 100).toInt()}%"
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putFloat(KEY_ZOOM, zoomFactor).apply()
+        sendZoomFactor()
+    }
+
+    private fun sendZoomFactor() {
+        val port = zoomPort ?: return
+        val msg = JSONObject()
+        msg.put("type", "zoom-set")
+        msg.put("factor", zoomFactor.toDouble())
+        port.postMessage(msg)
+    }
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -1120,6 +1383,15 @@ class MainActivity : Activity() {
         private const val KEY_MIGRATED = "hub_migrated_v1"
         private const val KEY_HINT_LONG = "hub_hint_longpress_v1"
         private const val KEY_HINT_ENTER = "hub_hint_enter_v1"
+        private const val KEY_ZOOM = "zoom_factor_v1"
+        private const val KEY_ZOOM_X = "zoom_pos_x_v1"
+        private const val KEY_ZOOM_Y = "zoom_pos_y_v1"
+        private const val ZOOM_MIN = 0.5f
+        private const val ZOOM_MAX = 2.0f
+        private const val ZOOM_STEP = 0.1f
+        private const val ZOOM_FAB_DP = 48
+        private const val ZOOM_PANEL_W_DP = 56
+        private const val ZOOM_PANEL_H_DP = 136
         private const val REQ_FILE = 1001
     }
 }

@@ -55,7 +55,7 @@ If you find any error while using the app, leave the error here
 
 ## Notes
 
-- Status: v0.5.2 — complete release.
+- Status: v0.5.3 — floating zoom button (+/-) over the server view.
 - arm64-v8a only: GeckoView ships large native libraries per architecture.
 - Clean-room code: the architecture is informed by Tavernium's own public
   description; no Tavernium code is copied here.

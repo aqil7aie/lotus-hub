@@ -158,4 +158,60 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone" />
+
+    <!-- v0.5.3 floating zoom: a small draggable button over the
+         server view; tapping it opens the +/- zoom panel. Hidden
+         in the Hub (native UI, nothing to zoom). Positioned in
+         code (x/y), never by layout gravity, so dragging is free. -->
+    <TextView
+        android:id="@+id/zoomFab"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="@drawable/zoom_fab_bg"
+        android:gravity="center"
+        android:text="±"
+        android:textColor="#FFFFFF"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/zoomPanel"
+        android:layout_width="56dp"
+        android:layout_height="wrap_content"
+        android:background="@drawable/zoom_fab_bg"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="4dp"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/zoomPlus"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@android:color/transparent"
+            android:text="+"
+            android:textColor="#FF8C42"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/zoomLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="100%"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/zoomMinus"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@android:color/transparent"
+            android:text="-"
+            android:textColor="#FF8C42"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 </FrameLayout>
