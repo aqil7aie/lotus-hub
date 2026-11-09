@@ -19,6 +19,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
@@ -803,14 +804,14 @@ class MainActivity : Activity() {
             // the server is down (translation returns null),
             // allow the file:// navigation as-is (v0.5.4
             // behaviour) instead of breaking the tap entirely.
-            // Only top-level loads: onLoadRequest also fires
-            // for iFrames, and subframe file:// loads must
-            // not be rewritten here.
+            // onLoadRequest fires for top-level loads only
+            // (subframes go to onSubframeLoadRequest), so no
+            // top-level gate is needed — and LoadRequest has
+            // no isTopLevel field in GeckoView 158.
             override fun onLoadRequest(
                 session: GeckoSession,
                 request: NavigationDelegate.LoadRequest
             ): GeckoResult<AllowOrDeny>? {
-                if (!request.isTopLevel) return null
                 val uri = request.uri
                 if (uri.startsWith("file://")) {
                     val httpUrl = toLocalHttpUrl(uri)
