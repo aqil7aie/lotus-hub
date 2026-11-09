@@ -55,7 +55,7 @@ If you find any error while using the app, leave the error here
 
 ## Notes
 
-- Status: v0.5.4 — smaller zoom button, plus an Open URL bar for local HTML games (file://) that hides once the game runs full screen.
+- Status: v0.5.4B — local HTML games now load through an embedded 127.0.0.1 server (fixes file:// link taps and +/- zoom on game pages); Open URL bar still takes file:// URLs and hides once the game runs full screen.
 - arm64-v8a only: GeckoView ships large native libraries per architecture.
 - Clean-room code: the architecture is informed by Tavernium's own public
   description; no Tavernium code is copied here.

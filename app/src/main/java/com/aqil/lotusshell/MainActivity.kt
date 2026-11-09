@@ -176,6 +176,37 @@ import kotlin.math.abs
  * rotation cannot strand it. Server addresses and tiles
  * are untouched in this version (Aqil's word: use Mari
  * on localhost, just add the button).
+ * v0.5.4B (file:// game fixes, Aqil's 2026-11-09
+ * screenshots): two proven bugs. (1) Tapping a game
+ * file inside Gecko's file:// directory listing FAILED
+ * (bounced to the Hub) while typing the same file's
+ * full URL directly WORKED — cause: a file:// listing
+ * loaded without a trailing slash resolves its relative
+ * file links to the PARENT directory (Bugzilla 264618),
+ * so the tap navigated to a path that does not exist and
+ * the failure handler bounced to the Hub. (2) The +/-
+ * zoom button did NOTHING on file:// game pages — cause:
+ * Firefox 153+ requires an explicit user-granted
+ * file-scheme permission for any extension to run content
+ * scripts on file:// URLs, off by default, desktop-only
+ * toggle (bug 2034168; Firefox blocks file:/// access,
+ * CVE-2020-6809), and GeckoView 158 exposes NO API to
+ * grant it — so the v0.5.4 zoom-file extension could
+ * never inject, whatever its match pattern. FIX: stop
+ * loading games as file:// at all. A tiny embedded
+ * static file server (LocalFileServer.kt) serves the
+ * app's own files dir on http://127.0.0.1, and file://
+ * URLs are transparently translated to the local http://
+ * URL at load time (openTypedUrl) and on link clicks
+ * (onLoadRequest). A game page is then an http:// URL:
+ * the PROVEN http(s) zoom extension applies, and link
+ * clicks are ordinary http navigations against the
+ * server's own listing (which always ends directory URLs
+ * with '/', so relative links resolve correctly). The
+ * dead zoom-file extension is removed. The URL-bar
+ * pre-fill stays file:// — translation happens at load
+ * time. A file:// load failure no longer bounces to the
+ * Hub; the file view stays open so Aqil sees the error.
  * v0.5.4 (open URL + smaller zoom, Aqil's 2026-11-09
  * request): (1) the zoom button shrinks 48dp -> 36dp
  * (Aqil: the icon was a bit big); the +/- panel and the
@@ -198,12 +229,15 @@ import kotlin.math.abs
  * matched http/https, so +/- would move the label on a
  * file:// game page while the game stayed 100%: a
  * SECOND zoom extension (new id, a file-scheme match,
- * same script) carries zoom onto local pages. The
- * 0.5.3 extension is untouched, so server zoom cannot
- * regress; the matches are disjoint, and the script's
- * __lotusZoom guard means only one instance can ever
- * run per page. No server address, tile, normalize(),
- * or server_url change in this version either.
+ * same script) carries zoom onto local pages. [v0.5.4B
+ * removed it: the file-scheme permission gate makes it
+ * dead code; games now load over http:// so the main
+ * extension covers them.] The 0.5.3 extension is
+ * untouched, so server zoom cannot regress; the matches
+ * are disjoint, and the script's __lotusZoom guard means
+ * only one instance can ever run per page. No server
+ * address, tile, normalize(), or server_url change in
+ * this version either.
  * v0.5.1 (Hub, Aqil's pick): black home grid of saved-server
  * cards (name-labeled, one tap opens, long-press deletes) +
  * add-server form (name, server, optional user/password;
@@ -243,6 +277,14 @@ class MainActivity : Activity() {
     private lateinit var formMessage: TextView
     private var sessionCanGoBack = false
     private var inServerView = false
+    // v0.5.4B: true while the current view is a LOCAL game/file
+    // (file://, or the local http://127.0.0.1 server that
+    // serves the games). A failed local load must NOT bounce
+    // to the Hub with "check the server is running" — that
+    // message is for a dead remote server, and bouncing hid
+    // the real error from Aqil. Set at every load entry
+    // point (openServer, openTypedUrl, onLoadRequest).
+    private var inLocalFileView = false
     private var formShown = false
     // v0.5.1B: index of the card being edited, or -1 for a new
     // server. Saving with a valid index replaces that card in
@@ -266,6 +308,15 @@ class MainActivity : Activity() {
     private var zoomFactor = 1.0f
     private var zoomPort: WebExtension.Port? = null
     private var zoomPanelShown = false
+
+    // v0.5.4B: embedded static file server for local HTML
+    // games (see LocalFileServer.kt). Started in onCreate,
+    // stopped in onDestroy. When it is up, file:// URLs are
+    // translated to http://127.0.0.1:<port> at load time so
+    // the proven http(s) zoom extension applies and link
+    // clicks work. When it is down (should not happen),
+    // file:// URLs load directly as in v0.5.4.
+    private var localFileServer: LocalFileServer? = null
 
     // v0.5.4 open URL: a small top bar for typing a link
     // (a file:// HTML game inside the app's own data, or
@@ -538,6 +589,14 @@ class MainActivity : Activity() {
         if (hasFocus) enableImmersive()
     }
 
+    // v0.5.4B: stop the local file server when the activity
+    // is destroyed so its 127.0.0.1 port is released.
+    override fun onDestroy() {
+        localFileServer?.stop()
+        localFileServer = null
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -600,6 +659,18 @@ class MainActivity : Activity() {
         setupUrlBar()
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         loadServers(prefs)
+
+        // v0.5.4B: start the local file server for HTML games.
+        // It serves the app's own external files dir (the folder
+        // Aqil puts his games in himself) on 127.0.0.1 only.
+        // No permission is needed for the app's own dir. If it
+        // fails to start, file:// URLs still load directly as
+        // in v0.5.4 (zoom and link taps just stay broken there).
+        val filesDir = getExternalFilesDir(null)
+        if (filesDir != null) {
+            val server = LocalFileServer(filesDir)
+            if (server.start()) localFileServer = server
+        }
 
         // Smoothness levers (see KDoc): input auto-zoom off, automatic
         // font-size adjustment off; mobile viewport + mobile UA locked in.
@@ -691,31 +762,16 @@ class MainActivity : Activity() {
             { /* zoom unavailable: +/- still move the label, page stays 100% */ }
         )
 
-        // v0.5.4 zoom on file:// pages: the 0.5.3 script only
-        // matches *://*/*, so on a local game page +/- would
-        // move the label while the game stayed 100%. A second
-        // extension (new id, file:///* match, same script)
-        // carries zoom onto local pages. The 0.5.3 extension
-        // is untouched, so server zoom cannot regress; the
-        // matches are disjoint, and the script's __lotusZoom
-        // guard means only one instance can ever run per
-        // page. Same delegate and native name — each
-        // extension has its own namespace, and only one
-        // port connects per page load.
-        runtime.webExtensionController.ensureBuiltIn(
-            "resource://android/assets/zoom-file/",
-            "lotus-shell-zoom-file@lotus-shell"
-        ).accept(
-            { extension ->
-                extension?.let { ext ->
-                    session.webExtensionController.setMessageDelegate(
-                        ext, zoomMessageDelegate, "lotus_zoom"
-                    )
-                    ext.setMessageDelegate(zoomMessageDelegate, "lotus_zoom")
-                }
-            },
-            { /* file zoom unavailable: +/- moves the label only on file:// pages */ }
-        )
+        // v0.5.4B: the v0.5.4 zoom-file extension is REMOVED.
+        // Firefox 153+ requires an explicit user-granted
+        // file-scheme permission for any extension to run
+        // content scripts on file:// URLs, off by default,
+        // desktop-only toggle (bug 2034168), and GeckoView
+        // 158 exposes no API to grant it — the extension
+        // could never inject into a game page. Games now
+        // load over http://127.0.0.1 (LocalFileServer),
+        // so the 0.5.3 extension above covers them. Its
+        // assets (assets/zoom-file) are deleted too.
 
         // v0.5.3: rotation changes the parent size, so the saved
         // fractions must be re-applied — otherwise a button parked
@@ -731,6 +787,44 @@ class MainActivity : Activity() {
                 sessionCanGoBack = canGoBack
             }
 
+            // v0.5.4B: rewrite file:// navigations to the local
+            // http:// server. A link click inside a listing is a
+            // content-initiated navigation; without this, a
+            // file:// listing loaded without a trailing slash
+            // resolves its relative links to the parent
+            // directory (Bugzilla 264618) and the tap fails,
+            // and even a correct file:// load would dodge the
+            // zoom extension (file-scheme permission gate,
+            // bug 2034168). DENY the file:// request and load
+            // the translated http:// URL through the same
+            // loadUri path that works when the URL is typed
+            // directly. The translated URL is http://, so this
+            // override returns null for it — no loop. When
+            // the server is down (translation returns null),
+            // allow the file:// navigation as-is (v0.5.4
+            // behaviour) instead of breaking the tap entirely.
+            // Only top-level loads: onLoadRequest also fires
+            // for iFrames, and subframe file:// loads must
+            // not be rewritten here.
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: NavigationDelegate.LoadRequest
+            ): GeckoResult<AllowOrDeny>? {
+                if (!request.isTopLevel) return null
+                val uri = request.uri
+                if (uri.startsWith("file://")) {
+                    val httpUrl = toLocalHttpUrl(uri)
+                    if (httpUrl != null) {
+                        // Still a local game navigation — a
+                        // failure here is not a dead server.
+                        inLocalFileView = true
+                        session.loadUri(httpUrl)
+                        return GeckoResult.fromValue(AllowOrDeny.DENY)
+                    }
+                }
+                return null
+            }
+
             override fun onLoadError(
                 session: GeckoSession,
                 uri: String?,
@@ -739,7 +833,12 @@ class MainActivity : Activity() {
                 // v0.5.1: no address row anymore — a failed load
                 // returns to the Hub so the server can be edited,
                 // tested, or re-entered from its card.
-                if (inServerView) {
+                // v0.5.4B: NOT for a local game/file — a local
+                // file that fails to load is not a dead server,
+                // and bouncing to the Hub hid the error from
+                // Aqil. Stay in the file view so he sees
+                // Gecko's own error page and can go back.
+                if (inServerView && !inLocalFileView) {
                     Toast.makeText(
                         this@MainActivity,
                         "Failed to load — check the server is running.",
@@ -873,7 +972,11 @@ class MainActivity : Activity() {
                     // the 158 AAR: loadUri only). The viewport-cover
                     // fix rides on the fresh extension id's
                     // document_start content script instead.
-                } else if (inServerView) {
+                } else if (inServerView && !inLocalFileView) {
+                    // v0.5.4B: a local game/file load failure is
+                    // not a dead server — stay in the file view
+                    // so Aqil sees the error instead of being
+                    // thrown back to the Hub.
                     Toast.makeText(
                         this@MainActivity,
                         "Failed to load — check the server is running.",
@@ -1008,6 +1111,9 @@ class MainActivity : Activity() {
     private fun showHub(showForm: Boolean) {
         formShown = showForm
         inServerView = false
+        // v0.5.4B: leaving the server/game view clears the
+        // local-file context too.
+        inLocalFileView = false
         geckoView.visibility = View.GONE
         hubView.visibility = View.VISIBLE
         // v0.5.3: the zoom button lives only over a server.
@@ -1199,6 +1305,8 @@ class MainActivity : Activity() {
             .putBoolean(KEY_HINT_ENTER, true)
             .apply()
         inServerView = true
+        // v0.5.4B: a saved server is remote, never local.
+        inLocalFileView = false
         hubView.visibility = View.GONE
         geckoView.visibility = View.VISIBLE
         session.loadUri(url)
@@ -1262,6 +1370,17 @@ class MainActivity : Activity() {
         imm?.hideSoftInputFromWindow(urlInput.windowToken, 0)
     }
 
+    // v0.5.4B: translate a file:// URL to the local
+    // http://127.0.0.1 server URL that serves the same file
+    // from the app's own files dir. Returns null when the
+    // server is not running or the path escapes the root —
+    // the caller then loads the file:// URL directly (v0.5.4
+    // behaviour). The URL bar still shows file:// to Aqil;
+    // translation happens only at load time.
+    private fun toLocalHttpUrl(url: String): String? {
+        return localFileServer?.toHttpUrl(url)
+    }
+
     // Load the typed link in the same GeckoView. Deliberately
     // NOT normalize(): that prepends http:// to anything
     // without a scheme, which would corrupt a file:// link.
@@ -1278,12 +1397,27 @@ class MainActivity : Activity() {
             text.startsWith("/") -> "file://$text"
             else -> "http://$text"
         }
+        // v0.5.4B: a file:// URL loads through the local
+        // http:// server instead, so the game page is an
+        // http:// URL — the proven zoom extension applies
+        // and link clicks work as ordinary http
+        // navigations. If the server is down, the file://
+        // URL loads directly (v0.5.4 behaviour).
+        val loadUrl = if (url.startsWith("file://")) {
+            toLocalHttpUrl(url) ?: url
+        } else {
+            url
+        }
         hideKeyboard()
         urlInput.clearFocus()
         inServerView = true
+        // Local if it is still file:// (server down, direct
+        // load) or if it is the local http:// server URL.
+        inLocalFileView = loadUrl.startsWith("file://") ||
+            (localFileServer?.baseUrl?.let { loadUrl.startsWith(it) } == true)
         hubView.visibility = View.GONE
         geckoView.visibility = View.VISIBLE
-        session.loadUri(url)
+        session.loadUri(loadUrl)
         // The zoom button appears with the game, like with a
         // server; the URL bar stays up until the page loads,
         // then onPageStop hides it and restores full screen.
