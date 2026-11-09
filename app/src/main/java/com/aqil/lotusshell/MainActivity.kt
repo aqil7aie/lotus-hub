@@ -197,7 +197,7 @@ import kotlin.math.abs
  * MANAGE_EXTERNAL_STORAGE. (3) The zoom script only
  * matched http/https, so +/- would move the label on a
  * file:// game page while the game stayed 100%: a
- * SECOND zoom extension (new id, file:///* match,
+ * SECOND zoom extension (new id, a file-scheme match,
  * same script) carries zoom onto local pages. The
  * 0.5.3 extension is untouched, so server zoom cannot
  * regress; the matches are disjoint, and the script's
