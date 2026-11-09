@@ -6,10 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -173,6 +176,34 @@ import kotlin.math.abs
  * rotation cannot strand it. Server addresses and tiles
  * are untouched in this version (Aqil's word: use Mari
  * on localhost, just add the button).
+ * v0.5.4 (open URL + smaller zoom, Aqil's 2026-11-09
+ * request): (1) the zoom button shrinks 48dp -> 36dp
+ * (Aqil: the icon was a bit big); the +/- panel and the
+ * drag stay exactly as in 0.5.3. (2) A new "Open URL"
+ * button (globe) in the Hub header opens a small top
+ * bar where Aqil types a link — a file:// HTML game he
+ * put inside the app's own data himself, or any URL —
+ * and the shell loads it in the same GeckoView. A
+ * file:// folder URL renders Gecko's own directory
+ * listing (files/folders as links, like Chrome/Firefox),
+ * so he taps a game to open it. Once the page loads,
+ * the bar hides and the game runs full screen again
+ * (immersive re-applied). The bar pre-fills the app's
+ * own files folder so he only appends the game name.
+ * No scoped-storage problem: the app's own external
+ * files dir needs no permission, and no other app's
+ * Android/data is ever touched (blocked on Android
+ * 11+, explicitly out of scope) — no SAF picker, no
+ * MANAGE_EXTERNAL_STORAGE. (3) The zoom script only
+ * matched http/https, so +/- would move the label on a
+ * file:// game page while the game stayed 100%: a
+ * SECOND zoom extension (new id, file:///* match,
+ * same script) carries zoom onto local pages. The
+ * 0.5.3 extension is untouched, so server zoom cannot
+ * regress; the matches are disjoint, and the script's
+ * __lotusZoom guard means only one instance can ever
+ * run per page. No server address, tile, normalize(),
+ * or server_url change in this version either.
  * v0.5.1 (Hub, Aqil's pick): black home grid of saved-server
  * cards (name-labeled, one tap opens, long-press deletes) +
  * add-server form (name, server, optional user/password;
@@ -235,6 +266,17 @@ class MainActivity : Activity() {
     private var zoomFactor = 1.0f
     private var zoomPort: WebExtension.Port? = null
     private var zoomPanelShown = false
+
+    // v0.5.4 open URL: a small top bar for typing a link
+    // (a file:// HTML game inside the app's own data, or
+    // any URL). Shown from the Hub's globe button; it stays
+    // up while the page loads, then hides on page-stop
+    // success so the game runs full screen again.
+    private lateinit var urlButton: Button
+    private lateinit var urlBar: LinearLayout
+    private lateinit var urlInput: EditText
+    private lateinit var urlGoButton: Button
+    private var urlBarShown = false
     private var dragSlopPx = 0
     private var dragStartRawX = 0f
     private var dragStartRawY = 0f
@@ -551,6 +593,11 @@ class MainActivity : Activity() {
         zoomMinus = findViewById(R.id.zoomMinus)
         zoomLabel = findViewById(R.id.zoomLabel)
         setupZoomFab()
+        urlButton = findViewById(R.id.urlButton)
+        urlBar = findViewById(R.id.urlBar)
+        urlInput = findViewById(R.id.urlInput)
+        urlGoButton = findViewById(R.id.urlGoButton)
+        setupUrlBar()
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         loadServers(prefs)
 
@@ -642,6 +689,32 @@ class MainActivity : Activity() {
                 }
             },
             { /* zoom unavailable: +/- still move the label, page stays 100% */ }
+        )
+
+        // v0.5.4 zoom on file:// pages: the 0.5.3 script only
+        // matches *://*/*, so on a local game page +/- would
+        // move the label while the game stayed 100%. A second
+        // extension (new id, file:///* match, same script)
+        // carries zoom onto local pages. The 0.5.3 extension
+        // is untouched, so server zoom cannot regress; the
+        // matches are disjoint, and the script's __lotusZoom
+        // guard means only one instance can ever run per
+        // page. Same delegate and native name — each
+        // extension has its own namespace, and only one
+        // port connects per page load.
+        runtime.webExtensionController.ensureBuiltIn(
+            "resource://android/assets/zoom-file/",
+            "lotus-shell-zoom-file@lotus-shell"
+        ).accept(
+            { extension ->
+                extension?.let { ext ->
+                    session.webExtensionController.setMessageDelegate(
+                        ext, zoomMessageDelegate, "lotus_zoom"
+                    )
+                    ext.setMessageDelegate(zoomMessageDelegate, "lotus_zoom")
+                }
+            },
+            { /* file zoom unavailable: +/- moves the label only on file:// pages */ }
         )
 
         // v0.5.3: rotation changes the parent size, so the saved
@@ -787,6 +860,14 @@ class MainActivity : Activity() {
         session.progressDelegate = object : ProgressDelegate {
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 if (success) {
+                    // v0.5.4: the game (or folder listing) is
+                    // running — the URL bar's job is done. Hide
+                    // it and go back to immersive full screen.
+                    // Harmless on server loads too: the bar is
+                    // already gone there, and re-applying the
+                    // hide flags is a no-op.
+                    if (urlBarShown) hideUrlBar()
+                    enableImmersive()
                     // v0.4.9: no native JS injection here — GeckoSession
                     // exposes no evaluateJavascript (verified against
                     // the 158 AAR: loadUri only). The viewport-cover
@@ -931,6 +1012,11 @@ class MainActivity : Activity() {
         hubView.visibility = View.VISIBLE
         // v0.5.3: the zoom button lives only over a server.
         hideZoomFab()
+        // v0.5.4: the URL bar lives only over a load. A failed
+        // load lands back here, so the bar must go with it —
+        // otherwise it would float over the Hub with nowhere
+        // to load into.
+        hideUrlBar()
         if (showForm) {
             // New-server form only: an edit fills the fields
             // right after this via showFormForEdit.
@@ -938,6 +1024,7 @@ class MainActivity : Activity() {
             hubGridScroll.visibility = View.GONE
             hubFormScroll.visibility = View.VISIBLE
             addButton.visibility = View.GONE
+            urlButton.visibility = View.GONE
             // Back only exists when there is a grid to go back to;
             // an empty home IS the form, so there is nowhere back.
             backButton.visibility =
@@ -946,6 +1033,7 @@ class MainActivity : Activity() {
             hubFormScroll.visibility = View.GONE
             hubGridScroll.visibility = View.VISIBLE
             addButton.visibility = View.VISIBLE
+            urlButton.visibility = View.VISIBLE
             refreshHub()
         }
     }
@@ -1115,6 +1203,90 @@ class MainActivity : Activity() {
         geckoView.visibility = View.VISIBLE
         session.loadUri(url)
         // v0.5.3: the zoom button appears with the server.
+        showZoomFab()
+    }
+
+    // ---- v0.5.4 open URL ----
+
+    // Wire the globe button, the Go button, and the keyboard's
+    // Go key to the same load. The bar pre-fills the app's own
+    // files folder (the games live there, put by Aqil himself),
+    // so he only appends the game/folder name.
+    private fun setupUrlBar() {
+        urlButton.setOnClickListener { showUrlBar() }
+        urlGoButton.setOnClickListener { openTypedUrl() }
+        urlInput.setOnEditorActionListener { _, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_GO ||
+                (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER &&
+                    event.action == KeyEvent.ACTION_DOWN)
+            ) {
+                openTypedUrl()
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    private fun showUrlBar() {
+        if (urlInput.text.isNullOrBlank()) {
+            // The games folder, pre-filled: file:///storage/
+            // emulated/0/Android/data/com.aqil.lotusshell/files/
+            // — the app's own external files dir, readable with
+            // no permission. Aqil appends the game name.
+            val dir = getExternalFilesDir(null)
+            if (dir != null) {
+                urlInput.setText("file://" + dir.absolutePath + "/")
+                urlInput.setSelection(urlInput.text.length)
+            }
+        }
+        urlBar.visibility = View.VISIBLE
+        urlBarShown = true
+        urlInput.requestFocus()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE)
+            as? InputMethodManager
+        imm?.showSoftInput(urlInput, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun hideUrlBar() {
+        if (!urlBarShown) return
+        hideKeyboard()
+        urlInput.clearFocus()
+        urlBar.visibility = View.GONE
+        urlBarShown = false
+    }
+
+    private fun hideKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE)
+            as? InputMethodManager
+        imm?.hideSoftInputFromWindow(urlInput.windowToken, 0)
+    }
+
+    // Load the typed link in the same GeckoView. Deliberately
+    // NOT normalize(): that prepends http:// to anything
+    // without a scheme, which would corrupt a file:// link.
+    // A bare path becomes file://, a bare host becomes
+    // http://, anything with a scheme passes through as-is.
+    // No prefs are touched: a game link is not a server
+    // address, so it must not overwrite KEY_URL or the
+    // hint state.
+    private fun openTypedUrl() {
+        val text = urlInput.text.toString().trim()
+        if (text.isBlank()) return
+        val url = when {
+            text.contains("://") -> text
+            text.startsWith("/") -> "file://$text"
+            else -> "http://$text"
+        }
+        hideKeyboard()
+        urlInput.clearFocus()
+        inServerView = true
+        hubView.visibility = View.GONE
+        geckoView.visibility = View.VISIBLE
+        session.loadUri(url)
+        // The zoom button appears with the game, like with a
+        // server; the URL bar stays up until the page loads,
+        // then onPageStop hides it and restores full screen.
         showZoomFab()
     }
 
@@ -1389,7 +1561,7 @@ class MainActivity : Activity() {
         private const val ZOOM_MIN = 0.5f
         private const val ZOOM_MAX = 2.0f
         private const val ZOOM_STEP = 0.1f
-        private const val ZOOM_FAB_DP = 48
+        private const val ZOOM_FAB_DP = 36
         private const val ZOOM_PANEL_W_DP = 56
         private const val ZOOM_PANEL_H_DP = 136
         private const val REQ_FILE = 1001

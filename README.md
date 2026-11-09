@@ -55,7 +55,7 @@ If you find any error while using the app, leave the error here
 
 ## Notes
 
-- Status: v0.5.3 — floating zoom button (+/-) over the server view.
+- Status: v0.5.4 — smaller zoom button, plus an Open URL bar for local HTML games (file://) that hides once the game runs full screen.
 - arm64-v8a only: GeckoView ships large native libraries per architecture.
 - Clean-room code: the architecture is informed by Tavernium's own public
   description; no Tavernium code is copied here.

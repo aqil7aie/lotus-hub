@@ -29,6 +29,17 @@
                 android:textSize="22sp"
                 android:textStyle="bold" />
 
+            <!-- v0.5.4 open URL: types a link (a file:// game
+                 inside the app's own data, or any URL) and loads
+                 it in the shell. Hub UI stays English. -->
+            <Button
+                android:id="@+id/urlButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🌐"
+                android:textSize="20sp"
+                android:visibility="gone" />
+
             <Button
                 android:id="@+id/addButton"
                 android:layout_width="wrap_content"
@@ -162,16 +173,17 @@
     <!-- v0.5.3 floating zoom: a small draggable button over the
          server view; tapping it opens the +/- zoom panel. Hidden
          in the Hub (native UI, nothing to zoom). Positioned in
-         code (x/y), never by layout gravity, so dragging is free. -->
+         code (x/y), never by layout gravity, so dragging is free.
+         v0.5.4: 36dp, not 48dp — Aqil said the icon was a bit big. -->
     <TextView
         android:id="@+id/zoomFab"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
         android:background="@drawable/zoom_fab_bg"
         android:gravity="center"
         android:text="±"
         android:textColor="#FFFFFF"
-        android:textSize="22sp"
+        android:textSize="18sp"
         android:textStyle="bold"
         android:visibility="gone" />
 
@@ -213,5 +225,40 @@
             android:textColor="#FF8C42"
             android:textSize="24sp"
             android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- v0.5.4 open URL: a small top bar for typing a link
+         (a file:// HTML game inside the app's own data, or
+         any URL). It shows only while the user types and the
+         page loads; once the game runs it hides and the app
+         is full screen again. Declared last so it sits above
+         the GeckoView and the zoom button. -->
+    <LinearLayout
+        android:id="@+id/urlBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#CC000000"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/urlInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="file:///storage/.../game.html"
+            android:imeOptions="actionGo"
+            android:inputType="textUri"
+            android:singleLine="true"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#888888" />
+
+        <Button
+            android:id="@+id/urlGoButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Go" />
     </LinearLayout>
 </FrameLayout>
